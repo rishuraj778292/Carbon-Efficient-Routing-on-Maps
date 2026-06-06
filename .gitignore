@@ -8,7 +8,10 @@ __pycache__/
 .venv*/
 .env
 .env.*
-
+delhi
+noida
+kolkata
+cache
 # OS
 .DS_Store
 Thumbs.db

@@ -13,3 +13,4 @@ sumolib
 eclipse-sumo
 shapely
 pyogrio
+catboost

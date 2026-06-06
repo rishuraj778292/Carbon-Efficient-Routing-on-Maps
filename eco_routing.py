@@ -36,9 +36,6 @@ def get_edges_dataset() -> gpd.GeoDataFrame:
         _EDGES_CACHE = load_edges_dataset()
     return _EDGES_CACHE
 
-# ----------------------------
-# Build graph with carbon cost
-# ----------------------------
 def build_carbon_graph():
     """Create network graph with carbon cost as edge weight"""
     edges = get_edges_dataset()
@@ -69,9 +66,6 @@ def build_carbon_graph():
     
     return G
 
-# ----------------------------
-# Eco-routing algorithms
-# ----------------------------
 def route_shortest_distance(G, origin, destination):
     """Find shortest distance route"""
     route = nx.shortest_path(G, origin, destination, weight='length')
@@ -117,9 +111,6 @@ def route_balanced(G, origin, destination, alpha=0.5, beta=0.3, gamma=0.2):
     route = nx.shortest_path(G, origin, destination, weight='composite_weight')
     return route
 
-# ----------------------------
-# Calculate route statistics
-# ----------------------------
 def calculate_route_stats(G, route):
     """Calculate statistics for a given route"""
     total_distance = 0
@@ -153,9 +144,6 @@ def calculate_route_stats(G, route):
         'num_segments': len(route) - 1
     }
 
-# ----------------------------
-# Compare all routes
-# ----------------------------
 def _route_edges_with_geometry(G: nx.MultiDiGraph, route: List[int]) -> List:
     geometries = []
     for i in range(len(route) - 1):
@@ -267,11 +255,7 @@ def compare_routes(origin, destination, plot_path: Optional[str] = None, show_pl
 
     return payload["results"]
 
-# ----------------------------
-# Interactive mode
-# ----------------------------
 if __name__ == "__main__":
-    # Example usage - replace with actual node IDs from your dataset
     print("Loading road network...")
 
     parser = argparse.ArgumentParser(description="Compare eco-routing strategies")
@@ -285,7 +269,6 @@ if __name__ == "__main__":
         compare_routes(args.origin, args.dest, plot_path=args.plot, show_plot=args.show_plot)
         sys.exit(0)
 
-    # Get some sample nodes for testing
     G = build_carbon_graph()
     nodes = list(G.nodes())[:10]
 
