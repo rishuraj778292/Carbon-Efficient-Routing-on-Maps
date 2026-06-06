@@ -1,5 +1,6 @@
 # Python
 __pycache__/
+__pycache__
 *.py[cod]
 *.pyo
 *.pyd
@@ -39,9 +40,7 @@ cache/
 **/*.pkl
 
 # Plots and outputs
-*.png
 *.pdf
-*.html
 
 # Local data
 /data/

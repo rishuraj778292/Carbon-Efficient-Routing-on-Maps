@@ -1,0 +1,1189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Eco-Routing | Kolkata Emission-Aware Navigation</title>
+  <meta name="description" content="Find the lowest-emission route through Kolkata using AI-powered carbon cost prediction, YOLO vehicle detection, and SUMO simulation."/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0F172A; --surface: #1E293B; --surface2: #243048; --border: #334155;
+      --text: #F1F5F9; --muted: #94A3B8; --accent: #10B981; --blue: #3B82F6;
+      --amber: #F59E0B; --purple: #8B5CF6; --red: #F43F5E; --cyan: #22D3EE;
+      --radius: 12px; --shadow: 0 4px 24px rgba(0,0,0,.45);
+    }
+    html, body { height: 100%; font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); }
+    .app { display: flex; height: 100vh; overflow: hidden; }
+    .sidebar {
+      width: 420px; min-width: 360px; height: 100%;
+      background: var(--surface); border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; overflow-y: auto; z-index: 10;
+    }
+    .sidebar-header {
+      padding: 22px 20px 16px;
+      background: linear-gradient(135deg, #0F3D2A 0%, #0F172A 100%);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .sidebar-header h1 {
+      font-size: 1.25rem; font-weight: 800; letter-spacing: -.02em;
+      background: linear-gradient(135deg, #10B981, #22D3EE);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .sidebar-header p { font-size: .78rem; color: var(--muted); margin-top: 4px; }
+    .section { padding: 16px 18px; border-bottom: 1px solid var(--border); }
+    .section-title {
+      font-size: .72rem; font-weight: 700; letter-spacing: .08em;
+      text-transform: uppercase; color: var(--muted); margin-bottom: 12px;
+    }
+    .collapsible-header {
+      cursor: pointer; user-select: none;
+      display: flex; justify-content: space-between; align-items: center;
+      transition: color .18s;
+    }
+    .collapsible-header:hover { color: var(--cyan); }
+
+    /* ── Inputs ──────────────────────────────────────────────────────────── */
+    .coord-group { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+    .coord-group label { grid-column: 1/-1; font-size: .78rem; color: var(--muted); font-weight: 600; }
+    .marker-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+    .dot-origin { background: var(--cyan); }
+    .dot-dest   { background: var(--red); }
+    input[type="number"], input[type="range"], select {
+      background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
+      color: var(--text); font-family: inherit; font-size: .82rem; padding: 8px 10px; width: 100%;
+      transition: border-color .2s;
+    }
+    input[type="number"]:focus, select:focus { outline: none; border-color: var(--accent); }
+    .hint-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+    .hint-btn {
+      flex: 1; padding: 6px 8px; border-radius: 7px; cursor: pointer;
+      font-size: .75rem; font-weight: 600; border: 1px solid var(--border);
+      background: var(--surface2); color: var(--muted); transition: all .18s;
+    }
+    .hint-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .hint-btn.active { background: rgba(16,185,129,.15); border-color: var(--accent); color: var(--accent); }
+    .hour-row { display: flex; align-items: center; gap: 10px; }
+    .hour-row input[type="range"] { flex: 1; padding: 0; accent-color: var(--accent); }
+    .hour-badge {
+      background: var(--surface2); border: 1px solid var(--border); border-radius: 6px;
+      padding: 4px 10px; font-size: .82rem; font-weight: 700; min-width: 48px;
+      text-align: center; color: var(--accent);
+    }
+
+    .btn-route {
+      width: 100%; padding: 13px; border: none; border-radius: 10px; cursor: pointer;
+      font-size: 1rem; font-weight: 700;
+      background: linear-gradient(135deg, #10B981, #059669);
+      color: white; transition: all .2s; box-shadow: 0 4px 14px rgba(16,185,129,.35);
+    }
+    .btn-route:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(16,185,129,.5); }
+    .btn-route:active { transform: translateY(0); }
+    .btn-route:disabled { opacity: .5; cursor: not-allowed; transform: none; box-shadow: none; }
+    .btn-defaults {
+      width: 100%; padding: 9px; border: 1px solid var(--border); border-radius: 10px;
+      cursor: pointer; font-size: .82rem; font-weight: 600;
+      background: transparent; color: var(--muted); transition: all .2s; margin-top: 8px;
+    }
+    .btn-defaults:hover { border-color: var(--cyan); color: var(--cyan); }
+
+    /* ── Status ──────────────────────────────────────────────────────────── */
+    .status { padding: 10px 14px; border-radius: 9px; font-size: .8rem; font-weight: 500; margin-top: 10px; display: none; }
+    .status.loading { background: rgba(59,130,246,.15); border: 1px solid var(--blue); color: var(--blue); display: block; }
+    .status.error   { background: rgba(244,63,94,.15);  border: 1px solid var(--red);  color: var(--red);  display: block; }
+    .status.success { background: rgba(16,185,129,.12); border: 1px solid var(--accent); color: var(--accent); display: block; }
+
+    /* ── Results ─────────────────────────────────────────────────────────── */
+    .results { padding: 16px 18px; }
+    .result-card {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 13px 14px; margin-bottom: 10px;
+      transition: border-color .2s;
+    }
+    .result-card.best { border-color: var(--accent); background: rgba(16,185,129,.07); }
+    .result-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .strategy-name { font-size: .88rem; font-weight: 700; }
+    .badge {
+      font-size: .68rem; font-weight: 700; padding: 2px 8px;
+      border-radius: 99px; background: rgba(16,185,129,.2); color: var(--accent);
+    }
+    .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .stat-item { background: var(--surface); border-radius: 7px; padding: 7px 9px; }
+    .stat-label { font-size: .67rem; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+    .stat-value { font-size: .92rem; font-weight: 700; margin-top: 1px; }
+    .savings-banner {
+      background: linear-gradient(135deg, rgba(16,185,129,.15), rgba(34,211,238,.1));
+      border: 1px solid var(--accent); border-radius: 10px;
+      padding: 12px 14px; margin-bottom: 12px; text-align: center;
+    }
+    .savings-banner .savings-val { font-size: 1.25rem; font-weight: 800; color: var(--accent); }
+    .savings-banner p { font-size: .75rem; color: var(--muted); margin-top: 3px; }
+    .plot-panel { padding: 14px 18px 18px; border-top: 1px solid var(--border); }
+    .plot-panel img { width: 100%; border-radius: var(--radius); border: 1px solid var(--border); cursor: pointer; }
+    .plot-hint { font-size: .7rem; color: var(--muted); margin-top: 5px; text-align: center; }
+
+    /* ── Spinner ─────────────────────────────────────────────────────────── */
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner {
+      display: inline-block; width: 14px; height: 14px;
+      border: 2px solid rgba(59,130,246,.3); border-top-color: var(--blue);
+      border-radius: 50%; animation: spin .7s linear infinite; margin-right: 7px;
+      vertical-align: middle;
+    }
+
+    /* ── Road Segment Panel ──────────────────────────────────────────────── */
+    .segment-panel-header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 8px;
+    }
+    .segment-panel-desc {
+      font-size: .75rem; color: var(--muted); margin-bottom: 12px; line-height: 1.5;
+    }
+    .segment-card {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 10px; padding: 11px 13px; margin-bottom: 8px;
+      transition: border-color .18s;
+    }
+    .segment-card:hover { border-color: #475569; }
+    .segment-card.has-override { border-color: var(--cyan); background: rgba(34,211,238,.05); }
+    .seg-card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+    .seg-name { font-size: .85rem; font-weight: 700; color: var(--text); }
+    .seg-meta { display: flex; gap: 5px; align-items: center; margin-top: 3px; flex-wrap: wrap; }
+    .hw-badge {
+      font-size: .6rem; font-weight: 700; padding: 2px 6px; border-radius: 99px;
+      text-transform: uppercase; letter-spacing: .04em;
+    }
+    .hw-primary   { background: rgba(245,158,11,.2); color: var(--amber); border: 1px solid rgba(245,158,11,.3); }
+    .hw-secondary { background: rgba(59,130,246,.2); color: var(--blue); border: 1px solid rgba(59,130,246,.3); }
+    .hw-trunk     { background: rgba(244,63,94,.2); color: var(--red); border: 1px solid rgba(244,63,94,.3); }
+    .hw-tertiary  { background: rgba(16,185,129,.2); color: var(--accent); border: 1px solid rgba(16,185,129,.3); }
+    .hw-other     { background: rgba(148,163,184,.15); color: var(--muted); border: 1px solid var(--border); }
+    .seg-length { font-size: .62rem; color: #64748B; }
+    .seg-stats { text-align: right; flex-shrink: 0; margin-left: 8px; }
+    .seg-ef { font-size: .82rem; font-weight: 800; color: var(--amber); }
+    .seg-vc { font-size: .65rem; color: var(--muted); }
+    .seg-actions { display: flex; gap: 6px; align-items: center; }
+    .seg-actions .hint-btn { flex: 1; white-space: nowrap; }
+    .seg-manual {
+      width: 80px; padding: 6px 8px; background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 7px; color: var(--text); font-size: .78rem; text-align: center; flex-shrink: 0;
+    }
+    .seg-manual:focus { outline: none; border-color: var(--cyan); }
+    .seg-result {
+      margin-top: 8px; padding: 8px 10px; border-radius: 8px;
+      background: var(--surface); border: 1px solid var(--border); font-size: .75rem;
+    }
+    .seg-result.yolo { border-color: var(--cyan); }
+    .seg-result.fallback { border-color: var(--amber); }
+    .apply-btn {
+      width: 100%; padding: 12px; border: none; border-radius: 10px; cursor: pointer;
+      font-size: .92rem; font-weight: 700; margin-top: 10px;
+      background: linear-gradient(135deg, #8B5CF6, #7C3AED);
+      color: white; transition: all .2s; box-shadow: 0 4px 14px rgba(139,92,246,.35);
+    }
+    .apply-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(139,92,246,.5); }
+    .apply-btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+    .seg-count-badge {
+      background: rgba(139,92,246,.2); color: var(--purple);
+      border-radius: 99px; padding: 2px 8px; font-size: .68rem; font-weight: 700;
+    }
+
+    /* ── SUMO Panel ──────────────────────────────────────────────────────── */
+    .sumo-row { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+    .sumo-row label { font-size: .75rem; color: var(--muted); min-width: 65px; flex-shrink: 0; }
+    .sumo-row input[type="range"] { flex: 1; padding: 0; accent-color: var(--amber); }
+    .sumo-val {
+      min-width: 38px; text-align: right; font-size: .82rem; font-weight: 700;
+      color: var(--amber);
+    }
+    .sumo-check-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+    .sumo-check-row input[type="checkbox"] { accent-color: var(--amber); width: 14px; height: 14px; }
+    .sumo-check-row label { font-size: .75rem; color: var(--muted); cursor: pointer; }
+    .btn-sumo {
+      width: 100%; padding: 11px; border: none; border-radius: 10px; cursor: pointer;
+      font-size: .9rem; font-weight: 700;
+      background: linear-gradient(135deg, #F59E0B, #D97706);
+      color: white; transition: all .2s; box-shadow: 0 4px 14px rgba(245,158,11,.35);
+    }
+    .btn-sumo:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(245,158,11,.5); }
+    .btn-sumo:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+    .sumo-status-bar {
+      margin-top: 8px; padding: 8px 12px; border-radius: 8px; font-size: .78rem; font-weight: 600;
+      display: none;
+    }
+    .sumo-status-bar.running { background: rgba(59,130,246,.15); border: 1px solid var(--blue); color: var(--blue); display: block; }
+    .sumo-status-bar.done    { background: rgba(16,185,129,.12); border: 1px solid var(--accent); color: var(--accent); display: block; }
+    .sumo-status-bar.error   { background: rgba(244,63,94,.15);  border: 1px solid var(--red); color: var(--red); display: block; }
+    .log-box {
+      margin-top: 8px; max-height: 160px; overflow-y: auto;
+      background: #0A0F1E; border: 1px solid var(--border); border-radius: 8px;
+      padding: 8px 10px; font-family: 'Courier New', monospace; font-size: .68rem;
+      color: #94A3B8; display: none;
+    }
+    .log-box .log-err  { color: var(--red); }
+    .log-box .log-warn { color: var(--amber); }
+    .log-box .log-ok   { color: var(--accent); }
+    .sumo-plot { margin-top: 10px; display: none; }
+    .sumo-plot img { width: 100%; border-radius: 8px; border: 1px solid var(--border); cursor: pointer; }
+
+    /* ── Map ─────────────────────────────────────────────────────────────── */
+    .map-container { flex: 1; position: relative; }
+    #map { width: 100%; height: 100%; }
+    .map-overlay {
+      position: absolute; top: 14px; left: 14px; z-index: 999;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 10px 14px; max-width: 280px;
+      font-size: .78rem; color: var(--muted); box-shadow: var(--shadow);
+    }
+    .map-overlay strong { color: var(--text); }
+    .map-legend {
+      position: absolute; bottom: 14px; right: 14px; z-index: 999;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 12px 14px; box-shadow: var(--shadow);
+    }
+    .legend-item { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: .78rem; }
+    .legend-item:last-child { margin-bottom: 0; }
+    .legend-line { width: 28px; height: 4px; border-radius: 2px; }
+
+    /* ── Modal ───────────────────────────────────────────────────────────── */
+    .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.8); z-index: 9999; align-items: center; justify-content: center; }
+    .modal.open { display: flex; }
+    .modal img { max-width: 95vw; max-height: 90vh; border-radius: 12px; box-shadow: 0 20px 80px rgba(0,0,0,.7); }
+    .modal-close {
+      position: fixed; top: 18px; right: 22px; background: var(--surface);
+      border: 1px solid var(--border); border-radius: 8px; padding: 6px 14px;
+      color: var(--text); cursor: pointer; font-size: .85rem; z-index: 10000;
+    }
+
+    /* ── Tabs ────────────────────────────────────────────────────────────── */
+    .tab-row { display: flex; gap: 4px; margin-bottom: 12px; }
+    .tab-btn {
+      flex: 1; padding: 8px; border: 1px solid var(--border); border-radius: 8px;
+      background: var(--surface2); color: var(--muted); cursor: pointer;
+      font-size: .75rem; font-weight: 600; text-align: center; transition: all .18s;
+    }
+    .tab-btn.active { background: rgba(34,211,238,.12); border-color: var(--cyan); color: var(--cyan); }
+    .tab-btn:hover { border-color: var(--cyan); color: var(--cyan); }
+
+    /* ── Scrollbar ───────────────────────────────────────────────────────── */
+    .sidebar::-webkit-scrollbar, .log-box::-webkit-scrollbar { width: 5px; }
+    .sidebar::-webkit-scrollbar-track, .log-box::-webkit-scrollbar-track { background: transparent; }
+    .sidebar::-webkit-scrollbar-thumb { background: #334155; border-radius: 99px; }
+    .log-box::-webkit-scrollbar-thumb { background: #1E293B; border-radius: 99px; }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <h1>Eco-Routing</h1>
+      <p>Multi-City &middot; Emission-Aware Navigation &middot; YOLO + AI + SUMO</p>
+    </div>
+
+    <!-- Workflow Info -->
+    <div class="section">
+      <div class="section-title">Multi-Route YOLO Workflow</div>
+      <div style="font-size:0.8rem; color:var(--muted);">
+        1. Set Origin &amp; Destination.<br/>
+        2. Click <b>Find Base Routes</b>.<br/>
+        3. Upload images per <b>route</b> or per <b>road segment</b>.<br/>
+        4. Click <b>Apply &amp; Re-Route</b> to see the updated best path.
+      </div>
+    </div>
+
+    <!-- City Selection -->
+    <div class="section">
+      <div class="section-title">City & Map Region</div>
+      <select id="route-city" style="margin-bottom:8px;" onchange="loadDefaults()">
+        <option value="kolkata">Kolkata</option>
+        <option value="noida">Noida</option>
+        <option value="delhi">Delhi</option>
+        <option value="mumbai">Mumbai</option>
+        <option value="bangalore">Bangalore</option>
+      </select>
+      <div class="hint-row" style="margin-top:0;">
+        <button class="hint-btn" onclick="document.getElementById('upload-city-file').click()">
+          📁 Upload New City Data (.zip)
+        </button>
+        <input type="file" id="upload-city-file" accept=".zip" style="display:none;" onchange="uploadCityData(this)" />
+      </div>
+    </div>
+
+    <!-- Coordinates -->
+    <div class="section">
+      <div class="section-title">Route Points</div>
+      <div class="hint-row" style="margin-bottom:10px;">
+        <button class="hint-btn" id="btn-set-origin" onclick="setPickMode('origin')">Click map: Origin</button>
+        <button class="hint-btn" id="btn-set-dest" onclick="setPickMode('dest')">Click map: Destination</button>
+      </div>
+      <div class="coord-group">
+        <label><span class="marker-dot dot-origin"></span>Origin</label>
+        <input type="number" id="origin-lat" step="0.0001" placeholder="Latitude" value="22.5680"/>
+        <input type="number" id="origin-lon" step="0.0001" placeholder="Longitude" value="88.3512"/>
+      </div>
+      <div class="coord-group">
+        <label><span class="marker-dot dot-dest"></span>Destination</label>
+        <input type="number" id="dest-lat" step="0.0001" placeholder="Latitude" value="22.5756"/>
+        <input type="number" id="dest-lon" step="0.0001" placeholder="Longitude" value="88.3697"/>
+      </div>
+      <button class="btn-defaults" onclick="loadDefaults()">Use Demo Points (Esplanade &rarr; Sealdah)</button>
+    </div>
+
+    <!-- Hour -->
+    <div class="section">
+      <div class="section-title">Time of Day</div>
+      <div class="hour-row">
+        <input type="range" id="hour-slider" min="0" max="23" value="8"
+               oninput="document.getElementById('hour-badge').textContent = formatHour(this.value)"/>
+        <div class="hour-badge" id="hour-badge">08:00</div>
+      </div>
+      <div style="font-size:.72rem;color:var(--muted);margin-top:5px;">
+        Affects vehicle density (rush hours = more emissions)
+      </div>
+    </div>
+
+    <!-- Route button -->
+    <div class="section">
+      <button class="btn-route" id="route-btn" onclick="findRoutes()">🗺️ Find Base Routes</button>
+      <div class="status" id="status-msg"></div>
+    </div>
+
+    <!-- Results -->
+    <div class="results" id="results-panel" style="display:none;">
+      <div class="section-title">Route Comparison</div>
+      <div id="savings-box"></div>
+      <div id="results-cards"></div>
+    </div>
+
+    <!-- Plot -->
+    <div class="plot-panel" id="plot-panel" style="display:none;">
+      <div class="section-title">Comparison Chart</div>
+      <img id="plot-thumb" src="" alt="Route comparison chart" onclick="openModal()"/>
+      <div class="plot-hint">Click to enlarge</div>
+    </div>
+
+    <!-- ── Road Segment Traffic Upload ────────────────────────────────── -->
+    <div class="section" id="segment-panel" style="display:none;">
+      <div class="segment-panel-header">
+        <div class="section-title" style="margin-bottom:0;">📍 Road Segment Traffic</div>
+        <span class="seg-count-badge" id="seg-override-badge" style="display:none;"></span>
+      </div>
+      <div class="segment-panel-desc">
+        Upload traffic photos for individual road segments. The route engine re-runs Dijkstra
+        with updated emission weights — so the <b style="color:var(--accent);">map path physically changes</b>.
+      </div>
+      <div id="segment-cards"></div>
+      <button class="apply-btn" id="apply-segments-btn" onclick="applyAllOverrides()" disabled>
+        🗺️ Apply Data &amp; Re-Route
+      </button>
+    </div>
+
+    <div class="section">
+      <div class="section-title collapsible-header" id="sumo-toggle-header" onclick="toggleSumoPanel()">
+        🚗 SUMO Simulation
+        <span id="sumo-toggle-icon" style="font-size:.7rem;color:var(--muted);">▼ expand</span>
+      </div>
+      <div id="sumo-body" style="display:none;padding-top:10px;">
+        <div class="sumo-row" style="margin-bottom:10px;">
+          <label for="sumo-city">City</label>
+          <select id="sumo-city" style="flex:1;">
+            <option value="kolkata">Kolkata</option>
+            <option value="noida">Noida</option>
+            <option value="delhi">Delhi</option>
+            <option value="mumbai">Mumbai</option>
+            <option value="bangalore">Bangalore</option>
+          </select>
+        </div>
+        <div class="sumo-row">
+          <label>Steps</label>
+          <input type="range" id="sumo-steps" min="100" max="600" value="300"
+                 oninput="document.getElementById('sumo-steps-val').textContent=this.value"/>
+          <span class="sumo-val" id="sumo-steps-val">300</span>
+        </div>
+        <div class="sumo-row">
+          <label>Vehicles</label>
+          <input type="range" id="sumo-vehicles" min="50" max="500" value="200"
+                 oninput="document.getElementById('sumo-veh-val').textContent=this.value"/>
+          <span class="sumo-val" id="sumo-veh-val">200</span>
+        </div>
+        <div class="sumo-check-row">
+          <input type="checkbox" id="sumo-skip" checked/>
+          <label for="sumo-skip">Physics-only mode (no SUMO binary needed)</label>
+        </div>
+        <div class="sumo-check-row">
+          <input type="checkbox" id="sumo-gui"/>
+          <label for="sumo-gui">Open SUMO-GUI window (requires SUMO installed)</label>
+        </div>
+        <button class="btn-sumo" id="sumo-run-btn" onclick="runSumoSimulation()">
+          🚗 Run SUMO Eco-Routing
+        </button>
+        <div class="sumo-status-bar" id="sumo-status-bar"></div>
+        <div class="log-box" id="sumo-log"></div>
+        <div class="sumo-plot" id="sumo-plot">
+          <div class="section-title" style="margin-bottom:6px;">SUMO Route Comparison</div>
+          <img id="sumo-plot-img" src="" alt="SUMO route comparison" onclick="openModalSrc(this.src)"/>
+        </div>
+      </div>
+    </div>
+
+  </aside>
+
+  <div class="map-container">
+    <div class="map-overlay">
+      <strong>Kolkata Road Network</strong><br/>
+      3 km range &middot; 11,125 segments &middot; OSM data<br/>
+      <span style="color:var(--accent);">&bull;</span> Click map to set waypoints
+    </div>
+    <div id="map"></div>
+    <div class="map-legend" id="map-legend" style="display:none;">
+      <div style="font-size:.72rem;color:var(--muted);margin-bottom:8px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;">Routes</div>
+      <div class="legend-item"><div class="legend-line" style="background:#3B82F6;"></div><span>Shortest Distance</span></div>
+      <div class="legend-item"><div class="legend-line" style="background:#F59E0B;"></div><span>Fastest Time</span></div>
+      <div class="legend-item"><div class="legend-line" style="background:#10B981;"></div><span>Lowest Emission</span></div>
+      <div class="legend-item"><div class="legend-line" style="background:#8B5CF6;"></div><span>Balanced</span></div>
+    </div>
+  </div>
+
+</div>
+
+<div class="modal" id="plot-modal">
+  <button class="modal-close" onclick="closeModal()">Close ✕</button>
+  <img id="plot-modal-img" src="" alt="Full size route comparison"/>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+let pickMode       = null;
+let originMarker   = null, destMarker = null;
+let routeLayers    = [];
+let segmentMarkers = [];                 // Leaflet markers for segment midpoints
+let routeYoloOverrides  = {};            // { routeName: { total, co2, counts, source, thumb } }
+let segmentOverrides    = {};            // { "u_v": vehicle_count }   ← NEW
+let segmentYoloResults  = {};            // { "u_v": full detection result }
+let lastRouteData  = null;
+let _allSegments   = [];                 // flat deduplicated segment list from last route
+const API = "";
+
+const map = L.map("map", { zoomControl: true }).setView([22.5726, 88.3639], 14);
+L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+  attribution: '&copy; OSM &copy; CARTO', subdomains: "abcd", maxZoom: 20
+}).addTo(map);
+
+map.on("click", function(e) {
+  if (!pickMode) return;
+  const { lat, lng } = e.latlng;
+  if (pickMode === "origin") {
+    document.getElementById("origin-lat").value = lat.toFixed(5);
+    document.getElementById("origin-lon").value = lng.toFixed(5);
+    placeMarker("origin", lat, lng);
+  } else {
+    document.getElementById("dest-lat").value = lat.toFixed(5);
+    document.getElementById("dest-lon").value = lng.toFixed(5);
+    placeMarker("dest", lat, lng);
+  }
+  setPickMode(null);
+});
+
+function setPickMode(mode) {
+  pickMode = mode;
+  document.getElementById("btn-set-origin").classList.toggle("active", mode === "origin");
+  document.getElementById("btn-set-dest").classList.toggle("active", mode === "dest");
+  map.getContainer().style.cursor = mode ? "crosshair" : "";
+}
+
+function makeIcon(color, label) {
+  return L.divIcon({
+    className: "",
+    html: `<div style="background:${color};width:18px;height:18px;border-radius:50%;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:white;">${label}</div>`,
+    iconSize: [18,18], iconAnchor: [9,9]
+  });
+}
+
+function makeSegmentIcon(efLevel) {
+  const colors = { high: '#F43F5E', medium: '#F59E0B', low: '#10B981' };
+  const c = colors[efLevel] || colors.medium;
+  return L.divIcon({
+    className: "",
+    html: `<div style="background:${c};width:10px;height:10px;border-radius:50%;border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,.5);"></div>`,
+    iconSize: [10,10], iconAnchor: [5,5]
+  });
+}
+
+function placeMarker(type, lat, lng) {
+  if (type === "origin") {
+    if (originMarker) map.removeLayer(originMarker);
+    originMarker = L.marker([lat,lng],{icon:makeIcon("#22D3EE","S")}).addTo(map).bindPopup("Start").openPopup();
+  } else {
+    if (destMarker) map.removeLayer(destMarker);
+    destMarker = L.marker([lat,lng],{icon:makeIcon("#F43F5E","E")}).addTo(map).bindPopup("End").openPopup();
+  }
+}
+
+async function handleRouteImageUpload(input, routeName) {
+  if (!input.files.length) return;
+  const safeId = routeName.replace(/\s+/g,'');
+  const resDiv = document.getElementById(`yolo-results-${safeId}`);
+  const btn    = document.getElementById(`yolo-btn-${safeId}`);
+  resDiv.style.display = "block";
+  resDiv.innerHTML = `<span class="spinner"></span> Running YOLO detection...`;
+  btn.disabled = true;
+  const formData = new FormData();
+  formData.append("image", input.files[0]);
+  try {
+    const res  = await fetch(`${API}/api/detect`, { method:"POST", body:formData });
+    const data = await res.json();
+    routeYoloOverrides[routeName] = {
+      total: data.total_vehicles, co2: data.co2_per_km_g,
+      counts: data.vehicle_counts || {}, source: data.source, thumb: data.annotated_b64,
+    };
+    renderYoloResult(routeName);
+    updateEvaluateBtn();
+    setStatus("success", `YOLO: ${data.total_vehicles} vehicles on "${routeName}" — click Apply & Re-Route.`);
+  } catch(e) {
+    resDiv.innerHTML = `<div style="color:var(--red);">Upload error: ${e.message}</div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = "🔄 Re-upload Image";
+  }
+}
+
+function renderYoloResult(routeName) {
+  const safeId = routeName.replace(/\s+/g,'');
+  const resDiv = document.getElementById(`yolo-results-${safeId}`);
+  if (!resDiv) return;
+  const info = routeYoloOverrides[routeName];
+  if (!info) { resDiv.style.display="none"; return; }
+  const srcBadge = info.source === "yolo_detection"
+    ? `<span style="background:rgba(34,211,238,.2);color:var(--cyan);padding:2px 7px;border-radius:99px;font-size:.65rem;font-weight:700;">YOLO</span>`
+    : `<span style="background:rgba(245,158,11,.2);color:var(--amber);padding:2px 7px;border-radius:99px;font-size:.65rem;font-weight:700;">FALLBACK</span>`;
+  const countsHtml = Object.entries(info.counts).map(([t,c])=>
+    `<div style="background:var(--surface2);border-radius:5px;padding:3px 5px;text-align:center;">
+       <div style="font-size:.9rem;font-weight:800;">${c}</div>
+       <div style="font-size:.58rem;color:var(--muted);text-transform:uppercase;">${t}</div>
+     </div>`).join('');
+  const thumbHtml = info.thumb
+    ? `<img src="data:image/jpeg;base64,${info.thumb}" style="width:100%;border-radius:6px;border:1px solid var(--border);margin-top:6px;cursor:pointer;" onclick="openModalSrc('data:image/jpeg;base64,${info.thumb}')"/>`
+    : '';
+  resDiv.style.display = "block";
+  resDiv.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">
+      <span style="color:var(--cyan);font-weight:700;">🚗 ${info.total} vehicles</span>${srcBadge}
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(${Math.min(Object.keys(info.counts).length,4)},1fr);gap:4px;margin-bottom:5px;">${countsHtml}</div>
+    <div style="background:linear-gradient(135deg,rgba(34,211,238,.08),rgba(16,185,129,.08));border:1px solid var(--cyan);border-radius:6px;padding:5px;text-align:center;">
+      <div style="font-size:.82rem;font-weight:800;color:var(--cyan);">${info.co2.toLocaleString()} g CO₂/km</div>
+    </div>${thumbHtml}`;
+}
+
+function updateEvaluateBtn() {
+  const btn = document.getElementById("evaluate-btn");
+  if (!btn) return;
+  const n = Object.keys(routeYoloOverrides).length + Object.keys(segmentOverrides).length;
+  btn.textContent = n > 0
+    ? `🔍 Evaluate & Re-Route (${n} override${n>1?'s':''})`
+    : `🔍 Evaluate & Find Best Route`;
+  btn.style.opacity = n > 0 ? "1" : "0.5";
+}
+
+async function evaluateOverrides() {
+  const rCount = Object.keys(routeYoloOverrides).length;
+  const sCount = Object.keys(segmentOverrides).length;
+  if (rCount === 0 && sCount === 0) {
+    setStatus("error", "Upload at least one traffic image before evaluating."); return;
+  }
+  await applyAllOverrides();
+}
+
+function hwBadgeClass(hw) {
+  if (hw.includes("primary")) return "hw-primary";
+  if (hw.includes("secondary")) return "hw-secondary";
+  if (hw.includes("trunk")) return "hw-trunk";
+  if (hw.includes("tertiary")) return "hw-tertiary";
+  return "hw-other";
+}
+
+function showSegmentPanel(routeSegments) {
+  if (!routeSegments || Object.keys(routeSegments).length === 0) return;
+
+  const segMap = new Map();
+  for (const [routeName, segs] of Object.entries(routeSegments)) {
+    for (const seg of segs) {
+      if (!segMap.has(seg.segment_id)) {
+        segMap.set(seg.segment_id, { ...seg, routeName });
+      } else {
+        if (seg.emission_factor > segMap.get(seg.segment_id).emission_factor) {
+          segMap.set(seg.segment_id, { ...seg, routeName });
+        }
+      }
+    }
+  }
+
+  _allSegments = Array.from(segMap.values())
+    .sort((a,b) => b.emission_factor - a.emission_factor)
+    .slice(0, 30);
+
+  const cardsDiv = document.getElementById("segment-cards");
+  cardsDiv.innerHTML = _allSegments.map(seg => {
+    const safeId = seg.segment_id.replace(/[^a-zA-Z0-9]/g, '_');
+    const storedOv = segmentOverrides[seg.segment_id];
+    const hasOv = storedOv !== undefined;
+    return `
+      <div class="segment-card${hasOv ? ' has-override' : ''}" id="seg-card-${safeId}">
+        <div class="seg-card-header">
+          <div style="flex:1;min-width:0;">
+            <div class="seg-name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${escapeHtml(seg.name)}">${escapeHtml(seg.name)}</div>
+            <div class="seg-meta">
+              <span class="hw-badge ${hwBadgeClass(seg.highway)}">${seg.highway}</span>
+              <span class="seg-length">${(seg.length_m/1000).toFixed(2)} km &middot; ${seg.avg_speed_kmh} km/h</span>
+            </div>
+          </div>
+          <div class="seg-stats">
+            <div class="seg-ef">${seg.emission_factor.toLocaleString()} g CO₂</div>
+          </div>
+        </div>
+        <div class="seg-actions">
+          <input type="file" id="seg-file-${safeId}" data-seg-id="${seg.segment_id}"
+                 data-seg-name="${escapeHtml(seg.name)}" accept="image/*" style="display:none;"/>
+          <button class="hint-btn" id="seg-upload-btn-${safeId}" style="font-size:.72rem;">
+            ${hasOv ? '🔄 Re-upload' : '📷 Upload Photo'}
+          </button>
+          <input type="number" class="seg-manual" id="seg-manual-${safeId}"
+                 placeholder="# vehicles" min="0" max="9999"
+                 value="${hasOv ? storedOv : ''}" title="Or enter vehicle count manually"/>
+        </div>
+        <div id="seg-result-${safeId}" class="seg-result" style="display:${segmentYoloResults[seg.segment_id] ? 'block' : 'none'};"></div>
+      </div>`;
+  }).join('');
+
+  // Wire events after innerHTML
+  _allSegments.forEach(seg => {
+    const safeId = seg.segment_id.replace(/[^a-zA-Z0-9]/g, '_');
+    const fileInput = document.getElementById(`seg-file-${safeId}`);
+    const uploadBtn = document.getElementById(`seg-upload-btn-${safeId}`);
+    const manualInput= document.getElementById(`seg-manual-${safeId}`);
+
+    uploadBtn.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', () => handleSegmentImageUpload(fileInput, seg));
+    manualInput.addEventListener('input', () => {
+      const val = parseInt(manualInput.value);
+      if (!isNaN(val) && val >= 0) {
+        segmentOverrides[seg.segment_id] = val;
+        document.getElementById(`seg-card-${safeId}`)?.classList.add('has-override');
+      } else {
+        delete segmentOverrides[seg.segment_id];
+        document.getElementById(`seg-card-${safeId}`)?.classList.remove('has-override');
+      }
+      updateApplyBtn();
+      updateEvaluateBtn();
+    });
+
+    if (segmentYoloResults[seg.segment_id]) {
+      renderSegmentResult(seg.segment_id, segmentYoloResults[seg.segment_id]);
+    }
+  });
+
+  clearSegmentMarkers();
+  _allSegments.forEach((seg, i) => {
+    if (!seg.midpoint) return;
+    const maxEf = _allSegments[0].emission_factor;
+    const level = seg.emission_factor > maxEf * 0.7 ? 'high'
+                : seg.emission_factor > maxEf * 0.4 ? 'medium' : 'low';
+    const marker = L.marker(seg.midpoint, { icon: makeSegmentIcon(level) })
+      .addTo(map)
+      .bindPopup(`<b>${seg.name}</b><br/>${seg.highway}<br/>EF: ${seg.emission_factor.toLocaleString()} g CO₂`);
+    segmentMarkers.push(marker);
+  });
+
+  document.getElementById("segment-panel").style.display = "block";
+  updateApplyBtn();
+}
+
+function clearSegmentMarkers() {
+  segmentMarkers.forEach(m => map.removeLayer(m));
+  segmentMarkers = [];
+}
+
+async function handleSegmentImageUpload(input, seg) {
+  if (!input.files.length) return;
+  const safeId = seg.segment_id.replace(/[^a-zA-Z0-9]/g, '_');
+  const resDiv = document.getElementById(`seg-result-${safeId}`);
+  const btn    = document.getElementById(`seg-upload-btn-${safeId}`);
+  const manualInput = document.getElementById(`seg-manual-${safeId}`);
+
+  resDiv.style.display = "block";
+  resDiv.className = "seg-result";
+  resDiv.innerHTML = `<span class="spinner"></span> Running YOLO on segment...`;
+  btn.disabled = true;
+
+  const formData = new FormData();
+  formData.append("image", input.files[0]);
+  formData.append("segment_id", seg.segment_id);
+  formData.append("segment_name", seg.name);
+
+  try {
+    const res  = await fetch(`${API}/api/detect_segment`, { method:"POST", body:formData });
+    const data = await res.json();
+
+    // Store override
+    segmentOverrides[seg.segment_id] = data.total_vehicles;
+    segmentYoloResults[seg.segment_id] = data;
+
+    if (manualInput) manualInput.value = data.total_vehicles;
+
+    document.getElementById(`seg-card-${safeId}`)?.classList.add('has-override');
+
+    renderSegmentResult(seg.segment_id, data);
+    updateApplyBtn();
+    updateEvaluateBtn();
+    setStatus("success", `Segment "${seg.name}": detected ${data.total_vehicles} vehicles via ${data.source === 'yolo_detection' ? 'YOLOv8' : 'fallback'}.`);
+  } catch(e) {
+    resDiv.innerHTML = `<div style="color:var(--red);">Error: ${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "🔄 Re-upload";
+  }
+}
+
+function renderSegmentResult(segId, data) {
+  const safeId = segId.replace(/[^a-zA-Z0-9]/g, '_');
+  const resDiv = document.getElementById(`seg-result-${safeId}`);
+  if (!resDiv || !data) return;
+
+  const isYolo = data.source === "yolo_detection";
+  resDiv.className = `seg-result ${isYolo ? 'yolo' : 'fallback'}`;
+  resDiv.style.display = "block";
+
+  const srcBadge = isYolo
+    ? `<span style="background:rgba(34,211,238,.2);color:var(--cyan);padding:2px 6px;border-radius:99px;font-size:.6rem;font-weight:700;">YOLO</span>`
+    : `<span style="background:rgba(245,158,11,.2);color:var(--amber);padding:2px 6px;border-radius:99px;font-size:.6rem;font-weight:700;">FALLBACK</span>`;
+
+  const thumbHtml = data.annotated_b64
+    ? `<img src="data:image/jpeg;base64,${data.annotated_b64}" style="width:100%;border-radius:5px;margin-top:5px;cursor:pointer;" onclick="openModalSrc('data:image/jpeg;base64,${data.annotated_b64}')"/>`
+    : '';
+
+  resDiv.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+      <span style="color:var(--cyan);font-weight:700;font-size:.8rem;">🚗 ${data.total_vehicles} vehicles detected</span>
+      ${srcBadge}
+    </div>
+    <div style="color:var(--muted);font-size:.65rem;margin-top:2px;">${(data.co2_per_km_g||0).toLocaleString()} g CO₂/km estimated</div>
+    ${thumbHtml}`;
+}
+
+function updateApplyBtn() {
+  const btn = document.getElementById("apply-segments-btn");
+  if (!btn) return;
+  const ns = Object.keys(segmentOverrides).length;
+  const nr = Object.keys(routeYoloOverrides).length;
+  const total = ns + nr;
+  if (total > 0) {
+    btn.textContent = `🗺️ Apply ${total} Override${total>1?'s':''} & Re-Route`;
+    btn.disabled = false;
+  } else {
+    btn.textContent = "🗺️ Apply Data & Re-Route";
+    btn.disabled = true;
+  }
+  // Update badge
+  const badge = document.getElementById("seg-override-badge");
+  if (badge) {
+    if (ns > 0) {
+      badge.style.display = "inline-block";
+      badge.textContent = `${ns} override${ns>1?'s':''}`;
+    } else {
+      badge.style.display = "none";
+    }
+  }
+}
+
+async function applyAllOverrides() {
+  const rCount = Object.keys(routeYoloOverrides).length;
+  const sCount = Object.keys(segmentOverrides).length;
+  if (rCount === 0 && sCount === 0) {
+    setStatus("error", "Upload at least one traffic image or enter a vehicle count first."); return;
+  }
+  const route_overrides = {};
+  for (const [name, info] of Object.entries(routeYoloOverrides)) {
+    route_overrides[name] = info.total;
+  }
+  await findRoutes(
+    Object.keys(route_overrides).length > 0 ? route_overrides : null,
+    Object.keys(segmentOverrides).length  > 0 ? { ...segmentOverrides } : null
+  );
+}
+
+// ── Defaults ──────────────────────────────────────────────────────────────
+async function loadDefaults() {
+  const city = document.getElementById("route-city").value || "kolkata";
+  try {
+    const res  = await fetch(`${API}/api/default_points?city=${city}`);
+    const data = await res.json();
+    document.getElementById("origin-lat").value = data.origin.lat;
+    document.getElementById("origin-lon").value = data.origin.lon;
+    document.getElementById("dest-lat").value   = data.destination.lat;
+    document.getElementById("dest-lon").value   = data.destination.lon;
+    placeMarker("origin", data.origin.lat, data.origin.lon);
+    placeMarker("dest",   data.destination.lat, data.destination.lon);
+    map.setView([data.origin.lat, data.origin.lon], 13);
+    setStatus("success", `Demo: ${data.origin.label} → ${data.destination.label}`);
+  } catch(e) {
+    setStatus("error", "Could not load defaults. Is the server running?");
+  }
+}
+
+window.addEventListener("load", () => {
+  placeMarker("origin", 22.5680, 88.3512);
+  placeMarker("dest",   22.5756, 88.3697);
+});
+
+function formatHour(h) { return String(h).padStart(2,"0") + ":00"; }
+
+// ── Find routes ────────────────────────────────────────────────────────────
+async function findRoutes(route_overrides = null, seg_overrides = null) {
+  const city = document.getElementById("route-city").value || "kolkata";
+  const olat = parseFloat(document.getElementById("origin-lat").value);
+  const olon = parseFloat(document.getElementById("origin-lon").value);
+  const dlat = parseFloat(document.getElementById("dest-lat").value);
+  const dlon = parseFloat(document.getElementById("dest-lon").value);
+  const hour = parseInt(document.getElementById("hour-slider").value);
+
+  if (isNaN(olat)||isNaN(olon)||isNaN(dlat)||isNaN(dlon)) {
+    setStatus("error","Please enter valid coordinates."); return;
+  }
+
+  // Only reset state on fresh base route (no overrides)
+  if (!route_overrides && !seg_overrides) {
+    routeYoloOverrides = {};
+    segmentOverrides   = {};
+    segmentYoloResults = {};
+    clearSegmentMarkers();
+    document.getElementById("segment-panel").style.display = "none";
+  }
+
+  placeMarker("origin", olat, olon);
+  placeMarker("dest",   dlat, dlon);
+  map.fitBounds([[olat,olon],[dlat,dlon]], {padding:[60,60]});
+  routeLayers.forEach(l => map.removeLayer(l));
+  routeLayers = [];
+  document.getElementById("results-panel").style.display = "none";
+  document.getElementById("plot-panel").style.display    = "none";
+
+  const isOverride = route_overrides || seg_overrides;
+  const label = isOverride
+    ? `Re-routing with ${Object.keys(route_overrides||{}).length + Object.keys(seg_overrides||{}).length} override(s)`
+    : "Computing base routes";
+  setStatus("loading", `<span class="spinner"></span>${label}...`);
+  document.getElementById("route-btn").disabled = true;
+
+  try {
+    const body = { city, origin_lat:olat, origin_lon:olon, dest_lat:dlat, dest_lon:dlon, hour };
+    if (route_overrides) body.route_overrides   = route_overrides;
+    if (seg_overrides)   body.segment_overrides = seg_overrides;
+
+    const res  = await fetch(`${API}/api/route`, {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (data.error) { setStatus("error", data.error); return; }
+
+    lastRouteData = data;
+    drawRoutes(data);
+    showResults(data);
+    if (data.plot_b64) showPlot(data.plot_b64);
+
+    // Show segment panel with route segment data
+    if (data.route_segments) showSegmentPanel(data.route_segments);
+
+    const suffix = isOverride ? " (overrides applied — map path updated!)" : " (baseline)";
+    setStatus("success", `Routes computed${suffix} Best eco-route: "${data.best_route}"`);
+    document.getElementById("map-legend").style.display = "block";
+  } catch(e) {
+    setStatus("error", `Connection error: ${e.message}. Start server: python serve.py`);
+  } finally {
+    document.getElementById("route-btn").disabled = false;
+  }
+}
+
+// ── Draw routes ────────────────────────────────────────────────────────────
+function drawRoutes(data) {
+  const colorMap = {
+    "Shortest Distance":"#3B82F6","Fastest Time":"#F59E0B",
+    "Lowest Emission":"#10B981","Balanced":"#8B5CF6"
+  };
+  for (const [name, coords] of Object.entries(data.routes_latlng || {})) {
+    if (!coords || coords.length === 0) continue;
+    const color  = colorMap[name] || "#aaa";
+    const isBest = name === data.best_route;
+    const layer  = L.polyline(coords, {
+      color, weight: isBest ? 7 : 4,
+      opacity: isBest ? 0.98 : 0.55,
+      dashArray: name === "Balanced" ? "8 4" : null,
+    }).addTo(map);
+    layer.bindPopup(
+      `<b style="color:${color}">${name}</b>${isBest?' ⭐ BEST':''}<br/>
+       ${data.stats[name]?.distance_km||"?"} km | ${data.stats[name]?.time_min||"?"} min<br/>
+       Emission Factor: <b>${(data.stats[name]?.emission_factor||0).toLocaleString(undefined,{maximumFractionDigits:0})}</b> g CO₂`
+    );
+    routeLayers.push(layer);
+  }
+  // Bring best route to front
+  routeLayers.filter(l=>l.options.weight===7).forEach(l=>l.bringToFront());
+}
+
+// ── Results panel ──────────────────────────────────────────────────────────
+function showResults(data) {
+  const panel     = document.getElementById("results-panel");
+  const cardsDiv  = document.getElementById("results-cards");
+  const savingsBox= document.getElementById("savings-box");
+  const colorMap  = {
+    "Shortest Distance":"#3B82F6","Fastest Time":"#F59E0B",
+    "Lowest Emission":"#10B981","Balanced":"#8B5CF6"
+  };
+  const s    = data.stats;
+  const best = data.best_route;
+
+  // Savings banner
+  if (s["Shortest Distance"] && s["Lowest Emission"]) {
+    const saved    = s["Shortest Distance"].emission_factor - s["Lowest Emission"].emission_factor;
+    const pct      = (saved / s["Shortest Distance"].emission_factor * 100).toFixed(1);
+    const extraKm  = (s["Lowest Emission"].distance_km  - s["Shortest Distance"].distance_km).toFixed(2);
+    const extraMin = (s["Lowest Emission"].time_min     - s["Shortest Distance"].time_min).toFixed(1);
+    savingsBox.innerHTML = `
+      <div class="savings-banner">
+        <div class="savings-val">${saved.toLocaleString(undefined,{maximumFractionDigits:0})} g CO₂ saved</div>
+        <p>Eco-route vs shortest · ${pct}% less emissions</p>
+        <p style="margin-top:4px;">+${extraKm} km | +${extraMin} min extra</p>
+      </div>`;
+  } else { savingsBox.innerHTML = ""; }
+
+  // Route cards with per-route upload
+  cardsDiv.innerHTML = Object.entries(s).map(([name, st]) => {
+    const color  = colorMap[name] || "#aaa";
+    const isBest = name === best;
+    const safeId = name.replace(/\s+/g,'');
+    const hasYolo= routeYoloOverrides[name] !== undefined;
+    return `
+      <div class="result-card${isBest ? " best" : ""}">
+        <div class="result-card-header">
+          <span class="strategy-name" style="color:${color}">
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${color};margin-right:7px;"></span>
+            ${name}
+          </span>
+          ${isBest ? '<span class="badge">BEST ECO</span>' : ""}
+        </div>
+        <div class="stats-grid">
+          <div class="stat-item"><div class="stat-label">Distance</div><div class="stat-value">${st.distance_km} km</div></div>
+          <div class="stat-item"><div class="stat-label">Time</div><div class="stat-value">${st.time_min} min</div></div>
+          <div class="stat-item" style="grid-column:1/-1;">
+            <div class="stat-label">Emission Factor (g CO₂)</div>
+            <div class="stat-value" style="color:${color};font-size:1.05rem;">${st.emission_factor.toLocaleString(undefined,{maximumFractionDigits:0})}</div>
+          </div>
+
+          <div class="stat-item"><div class="stat-label">Segments</div><div class="stat-value">${st.segments}</div></div>
+        </div>
+        <!-- Per-route YOLO upload -->
+        <div style="margin-top:10px;border-top:1px dashed var(--border);padding-top:10px;">
+          <input type="file" id="yolo-file-${safeId}" data-route="${name}" accept="image/*" style="display:none;"/>
+          <button class="hint-btn" id="yolo-btn-${safeId}" style="width:100%;margin-bottom:6px;">
+            ${hasYolo ? '🔄 Re-upload Route Image' : '📷 Upload Route Traffic Image'}
+          </button>
+          <div id="yolo-results-${safeId}" style="display:none;font-size:.78rem;"></div>
+        </div>
+      </div>`;
+  }).join("") + `
+    <button class="btn-route" id="evaluate-btn"
+            style="margin-top:10px;background:linear-gradient(135deg,#3B82F6,#2563EB);">
+      🔍 Evaluate &amp; Find Best Route
+    </button>`;
+
+  // Wire events
+  document.querySelectorAll('[id^="yolo-file-"]').forEach(inp => {
+    const routeName = inp.dataset.route;
+    const safeId    = routeName.replace(/\s+/g,'');
+    const btn       = document.getElementById(`yolo-btn-${safeId}`);
+    btn.addEventListener('click',   () => inp.click());
+    inp.addEventListener('change',  () => handleRouteImageUpload(inp, routeName));
+  });
+  document.getElementById("evaluate-btn").addEventListener('click', evaluateOverrides);
+  Object.keys(routeYoloOverrides).forEach(renderYoloResult);
+  updateEvaluateBtn();
+  panel.style.display = "block";
+}
+
+function showPlot(b64) {
+  const src = `data:image/png;base64,${b64}`;
+  document.getElementById("plot-thumb").src     = src;
+  document.getElementById("plot-modal-img").src = src;
+  document.getElementById("plot-panel").style.display = "block";
+}
+function openModal()       { document.getElementById("plot-modal").classList.add("open"); }
+function openModalSrc(src) { document.getElementById("plot-modal-img").src = src; openModal(); }
+function closeModal()      { document.getElementById("plot-modal").classList.remove("open"); }
+document.getElementById("plot-modal").addEventListener("click", function(e){ if(e.target===this) closeModal(); });
+document.addEventListener("keydown", e => { if(e.key==="Escape") closeModal(); });
+
+function setStatus(type, msg) {
+  const el = document.getElementById("status-msg");
+  el.className = `status ${type}`;
+  el.innerHTML = msg;
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── SUMO panel ─────────────────────────────────────────────────────────────
+let _sumoTaskId  = null;
+let _sumoPolling = null;
+let _sumoOpen    = false;
+
+function toggleSumoPanel() {
+  _sumoOpen = !_sumoOpen;
+  document.getElementById("sumo-body").style.display = _sumoOpen ? "block" : "none";
+  document.getElementById("sumo-toggle-icon").textContent = _sumoOpen ? "▲ collapse" : "▼ expand";
+}
+
+async function runSumoSimulation() {
+  const city      = document.getElementById("sumo-city").value;
+  const steps     = parseInt(document.getElementById("sumo-steps").value);
+  const vehicles  = parseInt(document.getElementById("sumo-vehicles").value);
+  const hour      = parseInt(document.getElementById("hour-slider").value);
+  const skipSumo  = document.getElementById("sumo-skip").checked;
+  const useGui    = document.getElementById("sumo-gui").checked;
+
+  const btn     = document.getElementById("sumo-run-btn");
+  const statBar = document.getElementById("sumo-status-bar");
+  const logBox  = document.getElementById("sumo-log");
+  const plotDiv = document.getElementById("sumo-plot");
+
+  btn.disabled = true;
+  btn.textContent = "⏳ Running simulation...";
+  statBar.className = "sumo-status-bar running";
+  statBar.textContent = `Running SUMO eco-routing for ${city}...`;
+  logBox.style.display = "block";
+  logBox.innerHTML = "";
+  plotDiv.style.display = "none";
+
+  try {
+    const res  = await fetch(`${API}/api/sumo`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ city, steps, vehicles, hour, skip_sumo: skipSumo, use_gui: useGui })
+    });
+    const data = await res.json();
+    if (data.error) {
+      statBar.className = "sumo-status-bar error";
+      statBar.textContent = `Error: ${data.error}`;
+      btn.disabled = false; btn.textContent = "🚗 Run SUMO Eco-Routing";
+      return;
+    }
+    _sumoTaskId = data.task_id;
+    _sumoPolling = setInterval(pollSumoStatus, 1500);
+  } catch(e) {
+    statBar.className = "sumo-status-bar error";
+    statBar.textContent = `Network error: ${e.message}`;
+    btn.disabled = false; btn.textContent = "🚗 Run SUMO Eco-Routing";
+  }
+}
+
+async function pollSumoStatus() {
+  if (!_sumoTaskId) return;
+  try {
+    const res  = await fetch(`${API}/api/sumo_status/${_sumoTaskId}`);
+    const data = await res.json();
+    const logBox = document.getElementById("sumo-log");
+
+    if (data.output && data.output.length > 0) {
+      // Show last 25 lines
+      logBox.innerHTML = data.output.slice(-25).map(line => {
+        const cls = line.includes("[ERROR]") ? "log-err"
+                  : line.includes("[WARN]")  ? "log-warn"
+                  : line.includes("ECO-ROUTE") || line.includes("BEST") || line.includes("saved") ? "log-ok"
+                  : "";
+        return `<div class="${cls}">${escapeHtml(line)}</div>`;
+      }).join("");
+      logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    if (data.done) {
+      clearInterval(_sumoPolling); _sumoPolling = null;
+      const btn     = document.getElementById("sumo-run-btn");
+      const statBar = document.getElementById("sumo-status-bar");
+      btn.disabled  = false; btn.textContent = "🚗 Run SUMO Eco-Routing";
+
+      if (data.status === "done") {
+        statBar.className = "sumo-status-bar done";
+        statBar.textContent = "✅ SUMO eco-routing complete! Check the log for results.";
+        setStatus("success", `SUMO simulation done for ${document.getElementById("sumo-city").value}!`);
+
+        if (data.plot_b64) {
+          const plotDiv = document.getElementById("sumo-plot");
+          const plotImg = document.getElementById("sumo-plot-img");
+          plotImg.src = `data:image/png;base64,${data.plot_b64}`;
+          plotDiv.style.display = "block";
+        }
+      } else {
+        statBar.className = "sumo-status-bar error";
+        statBar.textContent = "❌ Simulation failed. See log output above.";
+        setStatus("error", "SUMO simulation encountered an error. Check the log.");
+      }
+      _sumoTaskId = null;
+    }
+  } catch(e) {
+    // ignore transient poll errors
+  }
+}
+// ── Upload City ─────────────────────────────────────────────────────────────
+async function uploadCityData(input) {
+  if (!input.files.length) return;
+  const file = input.files[0];
+  const cityName = prompt("Enter the city name for this data (e.g. 'hyderabad'):");
+  if (!cityName) return;
+  
+  setStatus("loading", `<span class="spinner"></span>Uploading and extracting ${cityName}...`);
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("city_name", cityName);
+  
+  try {
+    const res = await fetch(`${API}/api/upload_city`, { method: "POST", body: formData });
+    const data = await res.json();
+    if (data.error) {
+      setStatus("error", `Upload failed: ${data.error}`);
+    } else {
+      setStatus("success", data.message);
+      // Add to routing dropdown
+      const sel = document.getElementById("route-city");
+      if (!Array.from(sel.options).find(o => o.value === cityName.toLowerCase())) {
+        const opt = document.createElement("option");
+        opt.value = cityName.toLowerCase();
+        opt.text = cityName.charAt(0).toUpperCase() + cityName.slice(1);
+        sel.add(opt);
+      }
+      sel.value = cityName.toLowerCase();
+      // Add to SUMO dropdown
+      const sumoSel = document.getElementById("sumo-city");
+      if (!Array.from(sumoSel.options).find(o => o.value === cityName.toLowerCase())) {
+        const opt = document.createElement("option");
+        opt.value = cityName.toLowerCase();
+        opt.text = cityName.charAt(0).toUpperCase() + cityName.slice(1);
+        sumoSel.add(opt);
+      }
+      sumoSel.value = cityName.toLowerCase();
+      
+      // Attempt to load defaults for this new city (will fallback to kolkata if not in DEFAULT_POINTS)
+      loadDefaults();
+    }
+  } catch(e) {
+    setStatus("error", `Upload error: ${e.message}`);
+  } finally {
+    input.value = ""; // reset
+  }
+}
+
+</script>
+</body>
+</html>
