@@ -20,7 +20,9 @@ import math
 import os
 import random
 import sys
+import time
 import warnings
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -35,6 +37,8 @@ import matplotlib.patches as mpatches
 from shapely.geometry import Point, LineString
 
 warnings.filterwarnings("ignore")
+import osmnx as ox
+
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 BASE_DIR   = Path(__file__).parent
@@ -73,6 +77,206 @@ VEHICLE_MIX = {
     "busway":       {"car":0.10,"motorcycle":0.05,"bus":0.70,"truck":0.05,"van":0.05,"bicycle":0.02,"auto":0.03},
 }
 DEFAULT_MIX = {"car":0.45,"motorcycle":0.20,"bus":0.07,"truck":0.08,"van":0.07,"bicycle":0.06,"auto":0.07}
+
+# ── TomTom Traffic Flow API ───────────────────────────────────────────────────
+TOMTOM_FLOW_URL = "https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json"
+TOMTOM_CACHE_TTL = 120   # seconds — TomTom traffic updates every ~2 min
+_tomtom_cache = {}       # { "lat_lon": { "data": {...}, "ts": float } }
+
+# Road capacity estimates (peak-hour vehicles/segment) for vehicle count derivation
+ROAD_CAPACITY = {
+    "trunk": 250, "trunk_link": 200,
+    "primary": 200, "primary_link": 160,
+    "secondary": 140, "secondary_link": 110,
+    "tertiary": 100, "tertiary_link": 80,
+    "residential": 60, "living_street": 30,
+    "unclassified": 70, "busway": 50,
+}
+DEFAULT_ROAD_CAPACITY = 80
+
+
+def fetch_tomtom_speed(lat: float, lon: float, api_key: str) -> dict:
+    """
+    Fetch real-time traffic speed for a point from TomTom Flow Segment Data API.
+    Returns { current_speed, free_flow_speed, confidence, road_closure } or None on failure.
+    Results are cached for TOMTOM_CACHE_TTL seconds.
+    """
+    cache_key = f"{round(lat, 5)}_{round(lon, 5)}"
+    now = time.time()
+    cached = _tomtom_cache.get(cache_key)
+    if cached and (now - cached["ts"]) < TOMTOM_CACHE_TTL:
+        return cached["data"]
+
+    try:
+        import requests as _requests
+        resp = _requests.get(TOMTOM_FLOW_URL, params={
+            "point": f"{lat},{lon}",
+            "key": api_key,
+            "unit": "KMPH",
+        }, timeout=5)
+        if resp.status_code != 200:
+            return None
+        body = resp.json()
+        fsd = body.get("flowSegmentData", {})
+        result = {
+            "current_speed": float(fsd.get("currentSpeed", 0)),
+            "free_flow_speed": float(fsd.get("freeFlowSpeed", 0)),
+            "confidence": float(fsd.get("confidence", 0)),
+            "road_closure": bool(fsd.get("roadClosure", False)),
+            "current_travel_time": float(fsd.get("currentTravelTime", 0)),
+            "free_flow_travel_time": float(fsd.get("freeFlowTravelTime", 0)),
+        }
+        _tomtom_cache[cache_key] = {"data": result, "ts": now}
+        return result
+    except Exception as e:
+        print(f"[TOMTOM] API error for ({lat},{lon}): {e}")
+        return None
+
+
+def estimate_vehicle_count_from_speed(current_speed: float, free_flow_speed: float,
+                                       highway: str, hour: int = 8) -> dict:
+    """
+    Estimate vehicle count and breakdown from TomTom speed ratio.
+    congestion_ratio = 1 - (current_speed / free_flow_speed)
+    vehicle_count ≈ road_capacity × congestion_factor × hour_multiplier
+    """
+    if free_flow_speed <= 0:
+        return fallback_vehicle_count(highway, hour)
+
+    congestion_ratio = max(0, 1 - (current_speed / free_flow_speed))
+    # Map congestion to vehicle density: even free-flow has ~10% capacity
+    density_factor = 0.10 + congestion_ratio * 0.90
+
+    hw = get_highway_str(highway)
+    capacity = ROAD_CAPACITY.get(hw, DEFAULT_ROAD_CAPACITY)
+
+    # Hour-of-day multiplier (same as used in training data)
+    hour_mult = {
+        0:0.10,1:0.07,2:0.05,3:0.05,4:0.07,5:0.20,
+        6:0.60,7:1.00,8:1.00,9:1.50,10:2.50,11:2.50,
+        12:2.50,13:2.50,14:1.05,15:1.00,16:1.20,17:1.70,
+        18:1.90,19:1.60,20:1.20,21:0.80,22:0.50,23:0.25,
+    }.get(hour % 24, 1.0)
+
+    total = max(1, int(round(capacity * density_factor * min(hour_mult, 1.5))))
+
+    # Split by vehicle type mix
+    mix = VEHICLE_MIX.get(hw, DEFAULT_MIX)
+    types = list(mix.keys())
+    probs = np.array([mix[t] for t in types])
+    probs /= probs.sum()
+    counts = np.random.multinomial(total, probs)
+    breakdown = {f"n_{t}": int(c) for t, c in zip(types, counts)}
+    co2_per_km = sum(breakdown.get(f"n_{t}", 0) * g
+                     for t, g in EMISSIONS_G_PER_KM.items())
+    return {"total": total, "co2_per_km_g": co2_per_km, **breakdown}
+
+
+def fetch_traffic_for_segments(segments: list, api_key: str, hour: int = 8) -> dict:
+    """
+    Batch-fetch TomTom live traffic for a list of segment dicts.
+    Each segment must have: segment_id, midpoint ([lat, lon]), highway.
+    Returns { segment_id: { vehicle_info, tomtom_speed, source } }
+    """
+    results = {}
+    fetched = 0
+    
+    # Cap TomTom live speed queries to at most 10 sampled segments to conserve API credits.
+    if len(segments) > 10:
+        step = max(1, len(segments) // 10)
+        sampled = segments[::step][:10]
+    else:
+        sampled = segments
+
+    for seg in sampled:
+        mid = seg.get("midpoint")
+        if not mid or len(mid) != 2:
+            continue
+        lat, lon = mid
+        tt = fetch_tomtom_speed(lat, lon, api_key)
+        if tt and tt["current_speed"] > 0:
+            vinfo = estimate_vehicle_count_from_speed(
+                tt["current_speed"], tt["free_flow_speed"],
+                seg.get("highway", "residential"), hour
+            )
+            results[seg["segment_id"]] = {
+                "vehicle_info": vinfo,
+                "tomtom_speed": tt,
+                "source": "tomtom_live",
+            }
+            fetched += 1
+        # else: segment not in results → will use existing data
+    if fetched > 0:
+        print(f"[TOMTOM] Fetched live traffic for {fetched}/{len(segments)} segments")
+    return results
+
+
+def enrich_graph_with_live_traffic(
+        G: nx.MultiDiGraph,
+        route_segments: dict,
+        api_key: str,
+        hour: int = 8) -> nx.MultiDiGraph:
+    """
+    Fetch live TomTom traffic for route segments, re-predict emission factors
+    with real speed + estimated vehicle count, and return a scaled graph.
+    """
+    # Collect all unique segments across all routes
+    all_segs = {}
+    for route_name, segs in route_segments.items():
+        for seg in segs:
+            sid = seg.get("segment_id")
+            if sid and sid not in all_segs and seg.get("midpoint"):
+                all_segs[sid] = seg
+
+    if not all_segs:
+        return G
+
+    live_data = fetch_traffic_for_segments(list(all_segs.values()), api_key, hour)
+    if not live_data:
+        return G
+
+    # Build segment_overrides from live data: { "u_v": vehicle_count }
+    segment_overrides = {}
+    for seg_id, info in live_data.items():
+        segment_overrides[seg_id] = info["vehicle_info"]["total"]
+
+    # Also update avg_speed on matching edges in a new graph
+    H = nx.MultiDiGraph()
+    for node, data in G.nodes(data=True):
+        H.add_node(node, **data)
+
+    for u, v, key, data in G.edges(data=True, keys=True):
+        new_data = dict(data)
+        seg_id = f"{u}_{v}"
+
+        if seg_id in live_data:
+            info = live_data[seg_id]
+            tt = info["tomtom_speed"]
+            vinfo = info["vehicle_info"]
+
+            # Update speed from TomTom
+            new_data["avg_speed"] = tt["current_speed"]
+            new_data["time"] = new_data["length"] / (tt["current_speed"] * 1000 / 3600) if tt["current_speed"] > 0 else new_data["time"]
+
+            # Update vehicle count
+            new_data["vehicle_count"] = vinfo["total"]
+
+            # Re-predict emission factor with real data
+            row_dict = {
+                "length": new_data["length"],
+                "avg_speed_kmph": tt["current_speed"],
+                "highway": new_data.get("highway", "residential"),
+                "building_density": new_data.get("building_density", 5),
+                "vegetation_score": new_data.get("vegetation_score", 2),
+                "AQI": new_data.get("AQI", 100),
+                "wind_speed_mps": new_data.get("wind_speed_mps", 1),
+            }
+            new_data["emission_factor"] = predict_emission_factor(row_dict, vinfo, hour=hour)
+            new_data["traffic_source"] = "tomtom_live"
+        H.add_edge(u, v, key=key, **new_data)
+
+    print(f"[TOMTOM] Enriched graph: {len(live_data)} edges updated with live traffic")
+    return H
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -167,10 +371,11 @@ def _load_model_bundle():
         return None
 
 
-def predict_emission_factor(row: dict, vehicle_info: dict) -> float:
+def predict_emission_factor(row: dict, vehicle_info: dict, hour: int = None) -> float:
     """
     Predict emission_factor for one road segment.
     Uses ML model if available, otherwise physics formula.
+    hour: if provided, used for temporal features; else uses current time.
     """
     bundle = _load_model_bundle()
     if bundle is None:
@@ -223,14 +428,15 @@ def predict_emission_factor(row: dict, vehicle_info: dict) -> float:
         row_input["vehicle_count"] / max(row_input["avg_speed_kmph"], 5.0)
     ) * row_input["length"]
 
-    hour = 8
-    dow = 1
+    # Use actual hour and day-of-week (not hardcoded)
+    actual_hour = hour if hour is not None else datetime.now().hour
+    actual_dow = datetime.now().weekday()  # 0=Monday
     row_input.update({
-        "hour_sin": np.sin(2 * np.pi * hour / 24),
-        "hour_cos": np.cos(2 * np.pi * hour / 24),
-        "dow_sin":  np.sin(2 * np.pi * dow / 7),
-        "dow_cos":  np.cos(2 * np.pi * dow / 7),
-        "is_weekend": 0.0,
+        "hour_sin": np.sin(2 * np.pi * actual_hour / 24),
+        "hour_cos": np.cos(2 * np.pi * actual_hour / 24),
+        "dow_sin":  np.sin(2 * np.pi * actual_dow / 7),
+        "dow_cos":  np.cos(2 * np.pi * actual_dow / 7),
+        "is_weekend": float(actual_dow >= 5),
     })
 
     row_input.update({
@@ -259,6 +465,200 @@ def predict_emission_factor(row: dict, vehicle_info: dict) -> float:
 # ─────────────────────────────────────────────────────────────────────────────
 # 3.  GRAPH BUILDER
 # ─────────────────────────────────────────────────────────────────────────────
+def download_and_fuse_bbox(olat: float, olon: float, dlat: float, dlon: float, city_name: str = "custom_route"):
+    """
+    Downloads OSM road network, building footprints, and vegetation polygons for a
+    bounding box enclosing (olat, olon) and (dlat, dlon) with a buffer.
+    Fetches real-time weather and AQI at the midpoint, fuses them together,
+    computes building density, vegetation score, simulated traffic, and saves
+    the fused dataset under BASE_DIR / city_name / fused_roads.geojson & fused_roads.csv.
+    """
+    import osmnx as ox
+    city_dir = BASE_DIR / city_name
+    city_dir.mkdir(parents=True, exist_ok=True)
+
+    lat_min, lat_max = min(olat, dlat), max(olat, dlat)
+    lon_min, lon_max = min(olon, dlon), max(olon, dlon)
+
+    # 0.015 degrees is roughly 1.6km. This is a good routing buffer.
+    buffer = 0.015
+    lat_min -= buffer
+    lat_max += buffer
+    lon_min -= buffer
+    lon_max += buffer
+
+    print(f"[OSM] Downloading road network for bbox: N={lat_max:.4f}, S={lat_min:.4f}, E={lon_max:.4f}, W={lon_min:.4f}")
+    try:
+        try:
+            # OSMnx 2.x expects bbox=(left, bottom, right, top) i.e. (lon_min, lat_min, lon_max, lat_max)
+            G = ox.graph_from_bbox(bbox=(lon_min, lat_min, lon_max, lat_max), network_type="drive")
+        except TypeError:
+            G = ox.graph_from_bbox(north=lat_max, south=lat_min, east=lon_max, west=lon_min, network_type="drive")
+    except Exception as e:
+        print(f"[ERROR] Failed to download OSM road network: {e}")
+        raise RuntimeError(f"Failed to fetch road network from OpenStreetMap. Error: {e}")
+
+    # Project graph to EPSG:3857 for metric distance buffers
+    G_proj = ox.project_graph(G, to_crs="EPSG:3857")
+    nodes, edges = ox.graph_to_gdfs(G_proj)
+
+    # Fetch buildings
+    tags_b = {"building": True}
+    print("[OSM] Downloading building footprints...")
+    try:
+        try:
+            buildings = ox.features_from_bbox(bbox=(lon_min, lat_min, lon_max, lat_max), tags=tags_b)
+        except TypeError:
+            buildings = ox.features_from_bbox(north=lat_max, south=lat_min, east=lon_max, west=lon_min, tags=tags_b)
+        if not buildings.empty:
+            buildings = buildings.to_crs(epsg=3857)
+    except Exception as e:
+        print(f"[WARN] Failed to download buildings: {e}. Using empty building footprint dataset.")
+        buildings = gpd.GeoDataFrame(columns=["geometry"], crs="EPSG:3857")
+
+    # Fetch vegetation
+    tags_v = {
+        "landuse": ["forest", "grass", "meadow"], 
+        "natural": ["wood", "tree", "grassland"],
+        "leisure": ["park", "garden"]
+    }
+    print("[OSM] Downloading vegetation polygons...")
+    try:
+        try:
+            vegetation = ox.features_from_bbox(bbox=(lon_min, lat_min, lon_max, lat_max), tags=tags_v)
+        except TypeError:
+            vegetation = ox.features_from_bbox(north=lat_max, south=lat_min, east=lon_max, west=lon_min, tags=tags_v)
+        if not vegetation.empty:
+            vegetation = vegetation.to_crs(epsg=3857)
+    except Exception as e:
+        print(f"[WARN] Failed to download vegetation: {e}. Using empty vegetation dataset.")
+        vegetation = gpd.GeoDataFrame(columns=["geometry"], crs="EPSG:3857")
+
+    # Compute building density (50m buffer)
+    print("[FUSION] Computing building density...")
+    building_counts = []
+    if not buildings.empty and "geometry" in buildings.columns:
+        buildings_sindex = buildings.sindex
+        for idx, road in edges.iterrows():
+            try:
+                buffer_geom = road.geometry.buffer(50)
+                possible_matches_index = list(buildings_sindex.intersection(buffer_geom.bounds))
+                possible_matches = buildings.iloc[possible_matches_index]
+                nearby_buildings = possible_matches[possible_matches.intersects(buffer_geom)]
+                building_counts.append(len(nearby_buildings))
+            except Exception:
+                building_counts.append(0)
+    else:
+        building_counts = [0] * len(edges)
+    edges["building_density"] = building_counts
+
+    # Compute vegetation score (50m buffer)
+    print("[FUSION] Computing vegetation score...")
+    veg_counts = []
+    if not vegetation.empty and "geometry" in vegetation.columns:
+        vegetation_sindex = vegetation.sindex
+        for idx, road in edges.iterrows():
+            try:
+                buffer_geom = road.geometry.buffer(50)
+                possible_matches_index = list(vegetation_sindex.intersection(buffer_geom.bounds))
+                possible_matches = vegetation.iloc[possible_matches_index]
+                veg = possible_matches[possible_matches.intersects(buffer_geom)]
+                veg_counts.append(len(veg))
+            except Exception:
+                veg_counts.append(0)
+    else:
+        veg_counts = [0] * len(edges)
+    edges["vegetation_score"] = veg_counts
+
+    # Fetch weather and AQI
+    mid_lat = (olat + dlat) / 2
+    mid_lon = (olon + dlon) / 2
+    api_key = os.environ.get("OPEN_WEATHER_API_KEY", "c87754e82558c2df5352f5a899078d0d")
+
+    print(f"[API] Fetching weather & AQI for coordinates: {mid_lat:.4f}, {mid_lon:.4f}")
+    wind_speed = 3.0
+    wind_direction = 180
+    try:
+        import requests as _requests
+        weather_url = f"https://api.openweathermap.org/data/2.5/weather?lat={mid_lat}&lon={mid_lon}&appid={api_key}"
+        resp = _requests.get(weather_url, timeout=5).json()
+        if "wind" in resp:
+            wind_speed = float(resp["wind"].get("speed", 3.0))
+            wind_direction = int(resp["wind"].get("deg", 180))
+    except Exception as e:
+        print(f"[WARN] Weather API failed: {e}. Using defaults (wind_speed=3.0, wind_direction=180).")
+
+    edges["wind_speed_mps"] = wind_speed
+    edges["wind_direction"] = wind_direction
+    edges["temperature_k"] = 300.0
+    edges["humidity_pct"] = 65.0
+    edges["openweather_aqi_1to5"] = 3
+
+    AQI = 100
+    try:
+        import requests as _requests
+        aqi_url = f"http://api.openweathermap.org/data/2.5/air_pollution?lat={mid_lat}&lon={mid_lon}&appid={api_key}"
+        aqi_data = _requests.get(aqi_url, timeout=5).json()
+        pm25 = aqi_data["list"][0]["components"]["pm2_5"]
+        if pm25 <= 12.0:
+            AQI = (50 / 12.0) * pm25
+        elif pm25 <= 35.4:
+            AQI = 50 + ((100 - 50) / (35.4 - 12.1)) * (pm25 - 12.1)
+        elif pm25 <= 55.4:
+            AQI = 100 + ((150 - 100) / (55.4 - 35.5)) * (pm25 - 35.5)
+        elif pm25 <= 150.4:
+            AQI = 150 + ((200 - 150) / (150.4 - 55.5)) * (pm25 - 55.5)
+        else:
+            AQI = 200 + ((300 - 200) / (250.4 - 150.5)) * min(pm25 - 150.5, 99.9)
+        AQI = int(AQI)
+    except Exception as e:
+        print(f"[WARN] AQI API failed: {e}. Using default AQI=100.")
+    edges["AQI"] = AQI
+
+    # Simulate traffic data
+    edges["vehicle_count"] = np.random.randint(10, 80, len(edges))
+
+    avg_speeds = []
+    for idx, row in edges.iterrows():
+        maxspeed = row.get("maxspeed")
+        if maxspeed:
+            try:
+                if isinstance(maxspeed, list):
+                    maxspeed = maxspeed[0]
+                speed_val = float(str(maxspeed).replace("km/h", "").replace(" mph", "").strip())
+            except Exception:
+                speed_val = 40.0
+        else:
+            speed_val = 40.0
+        avg_speeds.append(max(5.0, speed_val - np.random.randint(5, 15)))
+    edges["avg_speed_kmph"] = avg_speeds
+
+    # Compute initial emission factor
+    emission_factor = 0.12
+    edges["carbon_cost"] = (
+        edges["length"] * emission_factor * edges["vehicle_count"]
+        + edges["building_density"] * 5
+        - edges["vegetation_score"] * 3
+        + edges["AQI"] * 0.2
+    )
+
+    # Save to file
+    print("[FUSION] Saving dynamically fused network...")
+    edges_to_save = edges.copy()
+    if "u" not in edges_to_save.columns:
+        edges_to_save = edges_to_save.reset_index()
+
+    if "index" in edges_to_save.columns:
+        edges_to_save = edges_to_save.drop(columns=["index"])
+
+    geojson_path = city_dir / "fused_roads.geojson"
+    csv_path = city_dir / "fused_roads.csv"
+
+    edges_to_save.to_file(str(geojson_path), driver="GeoJSON")
+    edges_to_save.to_csv(str(csv_path), index=False)
+    print(f"[FUSION] Dynamic fusion successful: saved files under {city_dir}")
+
+
 _graph_cache = {}
 
 def build_emission_graph(city: str = "kolkata",
@@ -407,10 +807,17 @@ def compute_all_routes(G, origin, destination):
     return routes, strategies
 
 
-def route_stats(G, route, vehicle_override=None):
+def route_stats(G, route, vehicle_override=None, vehicle_type="car"):
     """Compute stats for a route. Returns dict."""
     dist = time_ = ef = veh = 0
+    trip_co2 = 0.0
     speeds = []
+    
+    # Emission factor per km for user's vehicle
+    user_emissions_base = EMISSIONS_G_PER_KM.get(vehicle_type, 120)
+    if vehicle_type == "ev" or vehicle_type == "bicycle":
+        user_emissions_base = 0.0
+        
     for i in range(len(route) - 1):
         u, v = route[i], route[i + 1]
         if v not in G[u]:
@@ -427,20 +834,53 @@ def route_stats(G, route, vehicle_override=None):
         else:
             veh_to_add = vc
 
-        dist  += ed["length"]
+        length_m = ed["length"]
+        dist  += length_m
         ef    += emission
         veh   += veh_to_add
-        speeds.append(ed["avg_speed"])
+        
+        # Calculate vehicle travel speed
+        avg_spd = ed.get("avg_speed", 30)
+        
+        # Speed adjustment based on vehicle type
+        if vehicle_type == "motorcycle":
+            travel_speed = min(avg_spd * 1.15, 60.0) # motorcycles filter through traffic
+        elif vehicle_type == "bicycle":
+            travel_speed = 15.0 # steady bicycle speed
+        elif vehicle_type in ["bus", "truck"]:
+            travel_speed = min(avg_spd * 0.8, 40.0) # slower, capped speed
+        else: # car, ev
+            travel_speed = avg_spd
+            
+        travel_speed = max(travel_speed, 5.0) # never less than 5 km/h
+        speeds.append(travel_speed)
+        
+        # Time on this segment (seconds)
+        seg_time = length_m / (travel_speed * 1000 / 3600)
+        time_ += seg_time
+        
+        # Trip CO2 emissions for this segment
+        # Congestion factor based on speed
+        if travel_speed < 15.0:
+            congestion_factor = 1.8
+        elif travel_speed < 30.0:
+            congestion_factor = 1.3
+        else:
+            congestion_factor = 1.0
+            
+        seg_co2 = (length_m / 1000.0) * user_emissions_base * congestion_factor
+        trip_co2 += seg_co2
         
     dist_km = dist / 1000.0
-    time_min = (dist_km / 40.0) * 60.0
+    time_min = time_ / 60.0
     
     return {
         "distance_km":    round(dist_km, 3),
         "time_min":       round(time_min, 2),
         "emission_factor": round(ef, 1),
+        "trip_co2_g":     round(trip_co2, 1),
         "avg_vehicles":   round(veh / max(len(route) - 1, 1), 1),
-        "avg_speed_kmh":  40.0,
+        "avg_speed_kmh":  round(sum(speeds) / max(len(speeds), 1), 1),
         "segments":       len(route) - 1,
     }
 
@@ -557,14 +997,31 @@ def get_route_segments(G, route: list, top_n: int = 30) -> list:
 
         # Midpoint lat/lon for map marker
         midpoint = None
+        seg_coords = []
         geom = ed.get("geometry")
         if geom and geom.geom_type == "LineString" and _tr:
             try:
                 mid = geom.interpolate(0.5, normalized=True)
                 lon_, lat_ = _tr.transform(mid.x, mid.y)
                 midpoint = [round(lat_, 6), round(lon_, 6)]
+                
+                # Extract coordinates
+                for x, y in geom.coords:
+                    lon_c, lat_c = _tr.transform(x, y)
+                    seg_coords.append([round(lat_c, 6), round(lon_c, 6)])
             except Exception:
                 pass
+
+        # Determine speed category
+        avg_spd = float(ed.get("avg_speed", 30))
+        if avg_spd < 15.0:
+            speed_category = "congested"
+        elif avg_spd < 30.0:
+            speed_category = "slow"
+        elif avg_spd < 45.0:
+            speed_category = "moderate"
+        else:
+            speed_category = "free"
 
         segments.append({
             "segment_id":      seg_id,
@@ -575,8 +1032,10 @@ def get_route_segments(G, route: list, top_n: int = 30) -> list:
             "emission_factor": round(float(ed.get("emission_factor", 0)), 1),
             "vehicle_count":   int(ed.get("vehicle_count", 60)),
             "length_m":        round(float(ed.get("length", 0)), 1),
-            "avg_speed_kmh":   round(float(ed.get("avg_speed", 30)), 1),
+            "avg_speed_kmh":   round(avg_spd, 1),
             "midpoint":        midpoint,
+            "coords":          seg_coords,
+            "speed_category":  speed_category,
         })
 
     segments.sort(key=lambda s: s["emission_factor"], reverse=True)
@@ -798,23 +1257,31 @@ def run_eco_routing(origin_lat: float, origin_lon: float,
                      use_ml: bool = True,
                      vehicle_override: int = None,
                      route_overrides: dict = None,
-                     segment_overrides: dict = None) -> dict:
+                     segment_overrides: dict = None,
+                     tomtom_api_key: str = None,
+                     vehicle_type: str = "car") -> dict:
     """
     Full pipeline:
-      1. Load / cache Kolkata graph
+      1. Load / cache graph (dynamically download if city is "custom_route")
       2. Find nearest graph nodes to (lat,lon) pairs
-      3. Compute 4 routes on base graph first (needed to extract route edges for scaling)
-      4. If route_overrides or segment_overrides present, build a scaled copy of the
+      3. Adjust edge travel times based on vehicle type
+      4. Compute 4 routes on base graph first (needed to extract route edges for scaling)
+      5. If route_overrides or segment_overrides present, build a scaled copy of the
          graph and re-run Dijkstra — this physically changes the route paths on the map.
-      5. Generate comparison plot
-      6. Return JSON-serialisable result dict including per-route segment metadata.
-
-    vehicle_override  : scalar used to scale ALL edges (legacy global override)
-    route_overrides   : { route_name: detected_vehicle_count }  (per-route upload)
-    segment_overrides : { "u_v": detected_vehicle_count }       (per-segment upload)
+      6. Generate comparison plot
+      7. Return JSON-serialisable result dict including per-route segment metadata.
     """
     if plot_path is None:
         plot_path = f"route_compare_{city}.png"
+
+    city_key = city.lower()
+    if city_key == "custom_route":
+        global _graph_cache
+        _graph_cache.pop("custom_route", None)
+        try:
+            download_and_fuse_bbox(origin_lat, origin_lon, dest_lat, dest_lon, city_name="custom_route")
+        except Exception as e:
+            return {"error": f"Failed to download and process OSM data: {str(e)}"}
 
     G = build_emission_graph(city=city, use_ml=use_ml, vehicle_override=vehicle_override)
     if G.number_of_nodes() == 0:
@@ -833,6 +1300,21 @@ def run_eco_routing(origin_lat: float, origin_lon: float,
     base_routes, strategies = compute_all_routes(G, origin_node, dest_node)
     if not base_routes:
         return {"error": "No path found between these two points. Try different coordinates."}
+
+    # ── Step 1b: Enrich with TomTom live traffic if API key is available ──────
+    if tomtom_api_key and not route_overrides and not segment_overrides:
+        # Get route segments for all base routes
+        base_route_segments = {}
+        for name, route in base_routes.items():
+            base_route_segments[name] = get_route_segments(G, route, top_n=30)
+        # Fetch live traffic and build enriched graph
+        enriched_G = enrich_graph_with_live_traffic(G, base_route_segments, tomtom_api_key, hour)
+        if enriched_G.number_of_edges() > 0:
+            enriched_routes, strategies = compute_all_routes(enriched_G, origin_node, dest_node)
+            if enriched_routes:
+                G = enriched_G
+                base_routes = enriched_routes
+                print("[INFO] Routes recomputed with TomTom live traffic data.")
 
     # ── Step 2: Build scaled graph if overrides are present ───────────────────
     # This is the key fix: Dijkstra is re-run on a modified graph so the actual
@@ -864,10 +1346,28 @@ def run_eco_routing(origin_lat: float, origin_lon: float,
                   f"{len(route_overrides or {})} route-overrides and "
                   f"{len(segment_overrides or {})} segment-overrides.")
 
+    # Adjust edge properties in G/active_graph based on vehicle_type
+    for u, v, key, data in active_graph.edges(data=True, keys=True):
+        avg_spd = data.get("avg_speed", 30)
+        length_m = data["length"]
+        
+        # Speed adjustment based on vehicle type
+        if vehicle_type == "motorcycle":
+            travel_speed = min(avg_spd * 1.15, 60.0)
+        elif vehicle_type == "bicycle":
+            travel_speed = 15.0
+        elif vehicle_type in ["bus", "truck"]:
+            travel_speed = min(avg_spd * 0.8, 40.0)
+        else:
+            travel_speed = avg_spd
+            
+        travel_speed = max(travel_speed, 5.0)
+        data["time"] = length_m / (travel_speed * 1000 / 3600)
+
     # ── Step 3: Compute stats (no extra vehicle_override needed — baked in) ───
     all_stats: dict = {}
     for name, route in routes.items():
-        all_stats[name] = route_stats(active_graph, route)
+        all_stats[name] = route_stats(active_graph, route, vehicle_type=vehicle_type)
 
     # Best route (lowest emission_factor)
     best_name = min(all_stats, key=lambda n: all_stats[n]["emission_factor"])

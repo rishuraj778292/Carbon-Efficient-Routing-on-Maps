@@ -43,6 +43,26 @@ BASE_DIR = Path(__file__).parent
 app = Flask(__name__, static_folder=str(BASE_DIR))
 CORS(app)
 
+# ── Load API keys from .env.local ───────────────────────────────────────────────
+TOMTOM_API_KEY = ""
+_env_file = BASE_DIR / ".env.local"
+if _env_file.exists():
+    for line in _env_file.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line.startswith("#") or "=" not in line:
+            continue
+        key, _, val = line.partition("=")
+        val = val.strip().strip('"').strip("'")
+        key = key.strip()
+        if key == "TOMTOM_API_KEY":
+            TOMTOM_API_KEY = val
+        elif key == "OPEN_WEATHER_API_KEY":
+            os.environ.setdefault("OPEN_WEATHER_API_KEY", val)
+    if TOMTOM_API_KEY:
+        print(f"[CONFIG] TomTom API key loaded ({TOMTOM_API_KEY[:6]}...)")
+    else:
+        print("[CONFIG] No TOMTOM_API_KEY found in .env.local — traffic tiles and live speed disabled.")
+
 # ── Server-side state ───────────────────────────────────────────────────────────────
 # SUMO tasks: { task_id: {"done": bool, "status": str, "output": [lines], "plot_b64": str|None} }
 _sumo_tasks: dict = {}
@@ -70,6 +90,10 @@ DEFAULT_POINTS = {
     "bangalore": {
         "origin": {"lat": 12.9716, "lon": 77.5946, "label": "Vidhana Soudha"},
         "destination": {"lat": 12.9352, "lon": 77.6245, "label": "Koramangala"}
+    },
+    "custom_route": {
+        "origin": {"lat": 28.6129, "lon": 77.2295, "label": "Connaught Place, Delhi"},
+        "destination": {"lat": 28.5921, "lon": 77.2250, "label": "India Gate, Delhi"}
     }
 }
 
@@ -280,6 +304,7 @@ def api_route():
         vehicle_override  = body.get("vehicle_override",  None)
         route_overrides   = body.get("route_overrides",   None)
         segment_overrides = body.get("segment_overrides", None)
+        vehicle_type      = body.get("vehicle_type", "car").lower()
 
         # Convert segment_overrides values to int (JSON may send floats)
         if segment_overrides:
@@ -295,6 +320,8 @@ def api_route():
             vehicle_override=vehicle_override,
             route_overrides=route_overrides,
             segment_overrides=segment_overrides,
+            tomtom_api_key=TOMTOM_API_KEY or None,
+            vehicle_type=vehicle_type,
         )
 
         if "error" in result:
@@ -331,6 +358,51 @@ def api_default_points():
         "destination": defaults["destination"],
         "city": city.title(),
     })
+
+
+@app.route("/api/config")
+def api_config():
+    """Serve non-secret config to the frontend (e.g. TomTom key for traffic tiles)."""
+    return jsonify({
+        "tomtom_key": TOMTOM_API_KEY,
+    })
+
+
+@app.route("/api/traffic_speed", methods=["POST"])
+def api_traffic_speed():
+    """
+    Proxy endpoint for fetching real-time traffic speed from TomTom.
+    Accepts JSON: { lat, lon }
+    Returns TomTom flow segment data + estimated vehicle count.
+    """
+    if not TOMTOM_API_KEY:
+        return jsonify({"error": "TomTom API key not configured."}), 503
+    try:
+        body = request.get_json(force=True) or {}
+        lat = float(body.get("lat", 0))
+        lon = float(body.get("lon", 0))
+        if lat == 0 or lon == 0:
+            return jsonify({"error": "lat and lon are required."}), 400
+
+        from eco_route_engine import fetch_tomtom_speed, estimate_vehicle_count_from_speed
+        tt = fetch_tomtom_speed(lat, lon, TOMTOM_API_KEY)
+        if tt is None:
+            return jsonify({"error": "TomTom API returned no data for this location."}), 404
+
+        highway = body.get("highway", "secondary")
+        hour = int(body.get("hour", 8))
+        vinfo = estimate_vehicle_count_from_speed(
+            tt["current_speed"], tt["free_flow_speed"], highway, hour
+        )
+
+        return jsonify({
+            "tomtom": tt,
+            "estimated_vehicles": vinfo,
+            "source": "tomtom_live",
+        })
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/upload_city", methods=["POST"])
@@ -471,5 +543,9 @@ if __name__ == "__main__":
     print(f"  Segment detection:      POST /api/detect_segment")
     print(f"  City Upload:            POST /api/upload_city")
     print(f"  SUMO simulation:        POST /api/sumo")
+    print(f"  TomTom traffic speed:   POST /api/traffic_speed")
+    print(f"  Config (API keys):      GET  /api/config")
+    tt_status = "\u2705 loaded" if TOMTOM_API_KEY else "\u274c not configured"
+    print(f"  TomTom API key:         {tt_status}")
     print(f"{'='*55}\n")
     app.run(host="0.0.0.0", port=port, debug=False)

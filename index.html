@@ -248,6 +248,58 @@
     .legend-item:last-child { margin-bottom: 0; }
     .legend-line { width: 28px; height: 4px; border-radius: 2px; }
 
+    /* ── Traffic Toggle ───────────────────────────────────────────────────── */
+    .traffic-toggle {
+      display: flex; align-items: center; gap: 7px; margin-top: 8px;
+      cursor: pointer; user-select: none;
+    }
+    .traffic-toggle input[type="checkbox"] {
+      accent-color: var(--accent); width: 14px; height: 14px; cursor: pointer;
+    }
+    .traffic-toggle label {
+      font-size: .75rem; color: var(--muted); cursor: pointer;
+    }
+    .traffic-toggle .live-dot {
+      width: 7px; height: 7px; border-radius: 50%; background: #10B981;
+      display: inline-block; animation: pulse-dot 2s ease-in-out infinite;
+    }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.8); }
+    }
+    .traffic-legend {
+      position: absolute; bottom: 14px; left: 14px; z-index: 999;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 10px 12px; box-shadow: var(--shadow);
+      display: none;
+    }
+    .traffic-legend-title {
+      font-size: .68rem; font-weight: 700; color: var(--muted);
+      text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px;
+    }
+    .traffic-legend-item {
+      display: flex; align-items: center; gap: 6px; margin-bottom: 4px;
+      font-size: .72rem; color: var(--text);
+    }
+    .traffic-legend-item:last-child { margin-bottom: 0; }
+    .traffic-legend-bar {
+      width: 22px; height: 4px; border-radius: 2px;
+    }
+    .speed-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      background: rgba(16,185,129,.12); border: 1px solid rgba(16,185,129,.3);
+      border-radius: 99px; padding: 2px 7px; font-size: .6rem; font-weight: 700;
+      color: var(--accent);
+    }
+    .speed-badge.congested {
+      background: rgba(244,63,94,.12); border-color: rgba(244,63,94,.3);
+      color: var(--red);
+    }
+    .speed-badge.moderate {
+      background: rgba(245,158,11,.12); border-color: rgba(245,158,11,.3);
+      color: var(--amber);
+    }
+
     /* ── Modal ───────────────────────────────────────────────────────────── */
     .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.8); z-index: 9999; align-items: center; justify-content: center; }
     .modal.open { display: flex; }
@@ -273,15 +325,282 @@
     .sidebar::-webkit-scrollbar-track, .log-box::-webkit-scrollbar-track { background: transparent; }
     .sidebar::-webkit-scrollbar-thumb { background: #334155; border-radius: 99px; }
     .log-box::-webkit-scrollbar-thumb { background: #1E293B; border-radius: 99px; }
+
+    /* ── Floating Google Maps UI Redesign ────────────────────────────────── */
+    #floating-search-card {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      z-index: 1000;
+      width: 390px;
+      max-width: 90vw;
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(51, 65, 85, 0.7);
+      border-radius: 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      transition: all 0.3s ease;
+    }
+    .search-input-wrapper {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .search-input-container {
+      display: flex;
+      align-items: center;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 2px 10px;
+    }
+    .search-input-container input {
+      border: none !important;
+      background: transparent !important;
+      flex: 1;
+      font-size: 0.85rem;
+      padding: 8px 4px;
+      color: var(--text);
+    }
+    .search-input-container input:focus {
+      outline: none;
+    }
+    .search-results-dropdown {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      z-index: 1010;
+      background: rgba(30, 41, 59, 0.95);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-top: 4px;
+      max-height: 200px;
+      overflow-y: auto;
+      box-shadow: var(--shadow);
+      display: none;
+    }
+    .vehicle-tabs-row {
+      display: flex;
+      gap: 4px;
+      overflow-x: auto;
+      padding-bottom: 4px;
+      scrollbar-width: none;
+    }
+    .vehicle-tabs-row::-webkit-scrollbar {
+      display: none;
+    }
+    .vehicle-tab-btn {
+      flex: 0 0 auto;
+      padding: 6px 12px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 0.78rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+    .vehicle-tab-btn:hover {
+      border-color: var(--cyan);
+      color: var(--cyan);
+    }
+    .vehicle-tab-btn.active {
+      background: rgba(34, 211, 238, 0.15);
+      border-color: var(--cyan);
+      color: var(--cyan);
+    }
+    #theme-toggle {
+      position: absolute;
+      top: 20px;
+      right: 74px; /* sits cleanly next to the gear button */
+      z-index: 1000;
+      background: rgba(30, 41, 59, 0.85);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--border);
+      border-radius: 50%;
+      width: 44px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: var(--text);
+      font-size: 1.25rem;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+      transition: all 0.2s;
+    }
+    #theme-toggle:hover {
+      border-color: var(--cyan);
+      color: var(--cyan);
+      transform: scale(1.05);
+    }
+    #sidebar-toggle {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      z-index: 1000;
+      background: rgba(30, 41, 59, 0.85);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--border);
+      border-radius: 50%;
+      width: 44px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: var(--text);
+      font-size: 1.25rem;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+      transition: all 0.2s;
+    }
+    #sidebar-toggle:hover {
+      border-color: var(--cyan);
+      color: var(--cyan);
+      transform: scale(1.05);
+    }
+    #floating-route-summary {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      z-index: 1000;
+      width: 390px;
+      max-width: 90vw;
+      background: rgba(15, 23, 42, 0.9);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(16, 185, 129, 0.6);
+      border-radius: 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      padding: 14px 16px;
+      display: none;
+      flex-direction: column;
+      gap: 10px;
+      transition: all 0.3s ease;
+    }
+    .summary-savings-title {
+      font-size: 0.95rem;
+      font-weight: 800;
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .summary-route-tabs {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 4px;
+    }
+    .summary-route-tab-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 12px;
+      background: rgba(30, 41, 59, 0.6);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .summary-route-tab-item:hover {
+      border-color: var(--cyan);
+      background: rgba(30, 41, 59, 0.8);
+    }
+    .summary-route-tab-item.active {
+      border-color: var(--cyan);
+      background: rgba(34, 211, 238, 0.12);
+    }
+    .summary-route-tab-title {
+      font-size: 0.78rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .summary-route-tab-meta {
+      font-size: 0.72rem;
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .sidebar {
+      width: 400px; height: 100%;
+      background: var(--surface); border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; overflow-y: auto;
+      position: fixed; top: 0; left: 0; bottom: 0;
+      transform: translateX(-100%);
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      z-index: 9999;
+    }
+    .sidebar.open {
+      transform: translateX(0);
+      box-shadow: 5px 0 30px rgba(0,0,0,0.5);
+    }
+    .gps-marker-container {
+      position: relative;
+      background: transparent !important;
+      border: none !important;
+      width: 20px !important;
+      height: 20px !important;
+    }
+    .gps-dot {
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 14px;
+      height: 14px;
+      background: #3B82F6;
+      border: 2px solid #FFF;
+      border-radius: 50%;
+      z-index: 2;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+    }
+    .gps-pulse {
+      position: absolute;
+      top: -5px;
+      left: -5px;
+      width: 30px;
+      height: 30px;
+      background: rgba(59, 130, 246, 0.4);
+      border-radius: 50%;
+      animation: gps-pulse-anim 2s infinite ease-out;
+      z-index: 1;
+      pointer-events: none;
+    }
+    @keyframes gps-pulse-anim {
+      0% {
+        transform: scale(0.3);
+        opacity: 1;
+      }
+      100% {
+        transform: scale(1.2);
+        opacity: 0;
+      }
+    }
   </style>
 </head>
 <body>
 <div class="app">
 
   <aside class="sidebar">
-    <div class="sidebar-header">
-      <h1>Eco-Routing</h1>
-      <p>Multi-City &middot; Emission-Aware Navigation &middot; YOLO + AI + SUMO</p>
+    <div class="sidebar-header" style="display:flex; justify-content:space-between; align-items:center;">
+      <div>
+        <h1>Eco-Routing</h1>
+        <p>Navigation Settings &amp; Dashboard</p>
+      </div>
+      <button onclick="toggleSidebar(false)" style="background:transparent; border:none; color:var(--muted); font-size:1.4rem; cursor:pointer; padding:5px; transition:color 0.2s;" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--muted)'">✕</button>
     </div>
 
     <!-- Workflow Info -->
@@ -298,7 +617,8 @@
     <!-- City Selection -->
     <div class="section">
       <div class="section-title">City & Map Region</div>
-      <select id="route-city" style="margin-bottom:8px;" onchange="loadDefaults()">
+      <select id="route-city" style="margin-bottom:8px;" onchange="syncCitySelection(this.value)">
+        <option value="custom_route">Dynamic (India)</option>
         <option value="kolkata">Kolkata</option>
         <option value="noida">Noida</option>
         <option value="delhi">Delhi</option>
@@ -433,10 +753,80 @@
   </aside>
 
   <div class="map-container">
-    <div class="map-overlay">
-      <strong>Kolkata Road Network</strong><br/>
-      3 km range &middot; 11,125 segments &middot; OSM data<br/>
-      <span style="color:var(--accent);">&bull;</span> Click map to set waypoints
+    <div id="theme-toggle" onclick="toggleMapTheme()" title="Switch Map Theme">☀️</div>
+    <div id="sidebar-toggle" onclick="toggleSidebar(true)" title="Advanced Settings & Simulation">⚙️</div>
+    
+    <div id="floating-search-card">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:0.8rem; font-weight:800; color:var(--cyan); letter-spacing:0.02em; text-transform:uppercase;">🗺️ Eco Route Planner</span>
+        <select id="route-city-floating" style="width:120px; font-size:0.75rem; padding:4px 6px; border-radius:6px; background:var(--surface2); color:var(--text); border:1px solid var(--border);" onchange="syncCitySelection(this.value)">
+          <option value="custom_route">Dynamic (India)</option>
+          <option value="kolkata">Kolkata</option>
+          <option value="noida">Noida</option>
+          <option value="delhi">Delhi</option>
+          <option value="mumbai">Mumbai</option>
+          <option value="bangalore">Bangalore</option>
+        </select>
+      </div>
+      
+      <div class="search-input-wrapper">
+        <div class="search-input-container">
+          <span style="font-size:0.8rem; margin-right:4px;">🟢</span>
+          <input type="text" id="search-origin" placeholder="Search starting point..." oninput="searchLocation(this.value, 'search-origin', 'origin-search-results')" />
+        </div>
+        <div id="origin-search-results" class="search-results-dropdown"></div>
+      </div>
+
+      <div class="search-input-wrapper">
+        <div class="search-input-container">
+          <span style="font-size:0.8rem; margin-right:4px;">🔴</span>
+          <input type="text" id="search-destination" placeholder="Search destination..." oninput="searchLocation(this.value, 'search-destination', 'destination-search-results')" />
+        </div>
+        <div id="destination-search-results" class="search-results-dropdown"></div>
+      </div>
+
+      <div class="vehicle-tabs-row">
+        <button class="vehicle-tab-btn active" data-type="car" onclick="selectVehicleType('car')">🚗 Car</button>
+        <button class="vehicle-tab-btn" data-type="ev" onclick="selectVehicleType('ev')">⚡ EV</button>
+        <button class="vehicle-tab-btn" data-type="motorcycle" onclick="selectVehicleType('motorcycle')">🏍️ Bike</button>
+        <button class="vehicle-tab-btn" data-type="bus" onclick="selectVehicleType('bus')">🚌 Bus</button>
+        <button class="vehicle-tab-btn" data-type="truck" onclick="selectVehicleType('truck')">🚚 Truck</button>
+        <button class="vehicle-tab-btn" data-type="bicycle" onclick="selectVehicleType('bicycle')">🚲 Cycle</button>
+      </div>
+
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:2px;">
+        <div class="traffic-toggle" style="margin-top:0;">
+          <input type="checkbox" id="show-route-traffic" checked onchange="toggleRouteTrafficStyle()" />
+          <span class="live-dot" style="margin-left:2px;"></span>
+          <label for="show-route-traffic" style="font-size:0.75rem; cursor:pointer;">Show Traffic on Routes</label>
+        </div>
+        <button class="btn-route" id="floating-route-btn" style="width:auto; padding:6px 12px; font-size:0.8rem; box-shadow:none;" onclick="findRoutes()">Route</button>
+      </div>
+    </div>
+
+    <div id="floating-route-summary">
+      <div class="summary-savings-title">
+        <span>🌱</span> <span id="summary-savings-text">Optimal Route Computed</span>
+      </div>
+      <p id="summary-savings-desc" style="font-size:0.72rem; color:var(--muted); margin-top:-4px;">Green path reduces localized pollution.</p>
+      
+      <div class="summary-route-tabs" id="summary-route-tabs-container">
+        <!-- populated dynamically -->
+      </div>
+      
+      <button class="hint-btn" style="margin-top:4px; font-weight:700; border-color:var(--cyan); color:var(--cyan); padding:5px 8px;" onclick="toggleSidebar(true)">
+        📊 Advanced Settings & Traffic Simulation
+      </button>
+    </div>
+
+    <div class="map-overlay" style="display:none;" id="default-map-overlay">
+      <strong>Route Region Status</strong><br/>
+      <span style="color:var(--accent);">&bull;</span> Map clicks set coordinates
+      <div class="traffic-toggle" id="traffic-toggle-row" style="display:none;">
+        <input type="checkbox" id="traffic-toggle" checked />
+        <span class="live-dot"></span>
+        <label for="traffic-toggle">Live Traffic (TomTom)</label>
+      </div>
     </div>
     <div id="map"></div>
     <div class="map-legend" id="map-legend" style="display:none;">
@@ -445,6 +835,13 @@
       <div class="legend-item"><div class="legend-line" style="background:#F59E0B;"></div><span>Fastest Time</span></div>
       <div class="legend-item"><div class="legend-line" style="background:#10B981;"></div><span>Lowest Emission</span></div>
       <div class="legend-item"><div class="legend-line" style="background:#8B5CF6;"></div><span>Balanced</span></div>
+    </div>
+    <div class="traffic-legend" id="traffic-legend">
+      <div class="traffic-legend-title">Live Traffic Speed</div>
+      <div class="traffic-legend-item"><div class="traffic-legend-bar" style="background:#00CC00;"></div> Free flow</div>
+      <div class="traffic-legend-item"><div class="traffic-legend-bar" style="background:#FFCC00;"></div> Moderate</div>
+      <div class="traffic-legend-item"><div class="traffic-legend-bar" style="background:#FF6600;"></div> Slow</div>
+      <div class="traffic-legend-item"><div class="traffic-legend-bar" style="background:#CC0000;"></div> Congested</div>
     </div>
   </div>
 
@@ -467,11 +864,167 @@ let segmentYoloResults  = {};            // { "u_v": full detection result }
 let lastRouteData  = null;
 let _allSegments   = [];                 // flat deduplicated segment list from last route
 const API = "";
+let currentVehicleType = "car";
+
+let activeRouteName = null;
+
+function toggleSidebar(open) {
+  document.querySelector(".sidebar").classList.toggle("open", open);
+  setTimeout(() => {
+    map.invalidateSize();
+  }, 350);
+}
+
+function selectActiveRoute(name) {
+  activeRouteName = name;
+  if (lastRouteData) {
+    drawRoutes(lastRouteData);
+    showResults(lastRouteData);
+  }
+}
+
+function syncCitySelection(val) {
+  document.getElementById("route-city").value = val;
+  document.getElementById("route-city-floating").value = val;
+  loadDefaults();
+}
+
+function selectVehicleType(type) {
+  currentVehicleType = type;
+  document.querySelectorAll(".vehicle-tab-btn").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.type === type);
+  });
+  
+  // Trigger re-routing if coordinates are loaded
+  const olat = parseFloat(document.getElementById("origin-lat").value);
+  const olon = parseFloat(document.getElementById("origin-lon").value);
+  const dlat = parseFloat(document.getElementById("dest-lat").value);
+  const dlon = parseFloat(document.getElementById("dest-lon").value);
+  if (!isNaN(olat) && !isNaN(olon) && !isNaN(dlat) && !isNaN(dlon)) {
+    const route_overrides = Object.keys(routeYoloOverrides).length > 0 ? {} : null;
+    if (route_overrides) {
+      for (const [name, info] of Object.entries(routeYoloOverrides)) {
+        route_overrides[name] = info.total;
+      }
+    }
+    findRoutes(route_overrides, Object.keys(segmentOverrides).length > 0 ? { ...segmentOverrides } : null);
+  }
+}
+
+function toggleRouteTrafficStyle() {
+  if (lastRouteData) {
+    drawRoutes(lastRouteData);
+  }
+}
+
+// ── Geocoding Search ────────────────────────────────────────────────────────
+let searchTimeout = null;
+function searchLocation(query, fieldId, resultsId) {
+  clearTimeout(searchTimeout);
+  const resultsDiv = document.getElementById(resultsId);
+  if (!query || query.length < 3) {
+    resultsDiv.style.display = "none";
+    return;
+  }
+  
+  searchTimeout = setTimeout(async () => {
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=in&limit=5`);
+      const data = await res.json();
+      if (!data || data.length === 0) {
+        resultsDiv.innerHTML = `<div style="padding: 8px; color: var(--muted); font-size: 0.78rem;">No results found</div>`;
+        resultsDiv.style.display = "block";
+        return;
+      }
+      
+      resultsDiv.innerHTML = data.map(item => {
+        const cleanName = item.display_name.replace(/'/g, "\\'");
+        return `<div class="search-result-item" 
+                     style="padding: 8px 10px; cursor: pointer; border-bottom: 1px solid var(--border); font-size: 0.78rem; transition: background 0.15s;" 
+                     onclick="selectSearchResult('${fieldId}', '${resultsId}', ${item.lat}, ${item.lon}, '${cleanName}')">
+                  <strong>${item.display_name.split(',')[0]}</strong><br/>
+                  <span style="font-size: 0.68rem; color: var(--muted);">${item.display_name.split(',').slice(1).join(',').trim()}</span>
+                </div>`;
+      }).join("");
+      resultsDiv.style.display = "block";
+    } catch (e) {
+      console.error("Geocoding failed:", e);
+    }
+  }, 300);
+}
+
+function selectSearchResult(fieldId, resultsId, lat, lon, displayName) {
+  document.getElementById(fieldId).value = displayName.split(',')[0];
+  document.getElementById(resultsId).style.display = "none";
+  
+  if (fieldId === 'search-origin') {
+    document.getElementById("origin-lat").value = lat.toFixed(5);
+    document.getElementById("origin-lon").value = lon.toFixed(5);
+    placeMarker("origin", lat, lon);
+  } else {
+    document.getElementById("dest-lat").value = lat.toFixed(5);
+    document.getElementById("dest-lon").value = lon.toFixed(5);
+    placeMarker("dest", lat, lon);
+  }
+  
+  const olat = parseFloat(document.getElementById("origin-lat").value);
+  const olon = parseFloat(document.getElementById("origin-lon").value);
+  const dlat = parseFloat(document.getElementById("dest-lat").value);
+  const dlon = parseFloat(document.getElementById("dest-lon").value);
+  if (!isNaN(olat) && !isNaN(olon) && !isNaN(dlat) && !isNaN(dlon)) {
+    map.fitBounds([[olat, olon], [dlat, dlon]], { padding: [50, 50] });
+  } else {
+    map.setView([lat, lon], 14);
+  }
+}
+
+// Hide dropdowns when clicking outside
+document.addEventListener("click", function(e) {
+  if (!e.target.closest('.search-input-wrapper')) {
+    const origDiv = document.getElementById("origin-search-results");
+    const destDiv = document.getElementById("destination-search-results");
+    if (origDiv) origDiv.style.display = "none";
+    if (destDiv) destDiv.style.display = "none";
+  }
+});
 
 const map = L.map("map", { zoomControl: true }).setView([22.5726, 88.3639], 14);
-L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-  attribution: '&copy; OSM &copy; CARTO', subdomains: "abcd", maxZoom: 20
-}).addTo(map);
+
+let currentMapTheme = "dark";
+let baseTileLayer = null;
+
+function initBaseTileLayer() {
+  const darkUrl = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+  const lightUrl = "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
+  
+  if (baseTileLayer) {
+    map.removeLayer(baseTileLayer);
+  }
+  
+  const url = currentMapTheme === "dark" ? darkUrl : lightUrl;
+  baseTileLayer = L.tileLayer(url, {
+    attribution: '&copy; OSM &copy; CARTO',
+    subdomains: "abcd",
+    maxZoom: 20
+  }).addTo(map);
+}
+
+function toggleMapTheme() {
+  currentMapTheme = currentMapTheme === "dark" ? "light" : "dark";
+  document.getElementById("theme-toggle").textContent = currentMapTheme === "dark" ? "☀️" : "🌙";
+  initBaseTileLayer();
+}
+
+initBaseTileLayer();
+
+// ── TomTom Traffic Flow Tile Layer ───────────────────────────────────────
+let trafficLayer = null;
+let trafficVisible = false;
+let _trafficRefreshTimer = null;
+
+async function initTrafficLayer() {
+  console.log("[Traffic] Global TomTom live traffic tile layer is disabled to conserve API credits. Real-time traffic speeds are computed specifically along routes.");
+}
 
 map.on("click", function(e) {
   if (!pickMode) return;
@@ -826,6 +1379,11 @@ async function loadDefaults() {
     document.getElementById("dest-lon").value   = data.destination.lon;
     placeMarker("origin", data.origin.lat, data.origin.lon);
     placeMarker("dest",   data.destination.lat, data.destination.lon);
+    
+    // Sync search fields
+    document.getElementById("search-origin").value = data.origin.label;
+    document.getElementById("search-destination").value = data.destination.label;
+    
     map.setView([data.origin.lat, data.origin.lon], 13);
     setStatus("success", `Demo: ${data.origin.label} → ${data.destination.label}`);
   } catch(e) {
@@ -833,9 +1391,59 @@ async function loadDefaults() {
   }
 }
 
+let gpsMarker = null;
+
 window.addEventListener("load", () => {
-  placeMarker("origin", 22.5680, 88.3512);
-  placeMarker("dest",   22.5756, 88.3697);
+  syncCitySelection("custom_route");
+  
+  setTimeout(() => {
+    map.invalidateSize();
+    if (map.dragging) {
+      map.dragging.enable();
+    }
+    
+    // Attempt Geolocation just like Google Maps
+    if (navigator.geolocation) {
+      setStatus("loading", "<span class='spinner'></span>Locating your current position...");
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const lat = position.coords.latitude;
+          const lon = position.coords.longitude;
+          
+          // Set origin fields in UI
+          document.getElementById("origin-lat").value = lat.toFixed(5);
+          document.getElementById("origin-lon").value = lon.toFixed(5);
+          document.getElementById("search-origin").value = "My Location";
+          
+          // Place origin marker
+          placeMarker("origin", lat, lon);
+          
+          // Center map view on current location
+          map.setView([lat, lon], 14);
+          
+          // Draw pulsating Google Maps style current location blue dot
+          const gpsIcon = L.divIcon({
+            className: 'gps-marker-container',
+            html: '<div class="gps-dot"></div><div class="gps-pulse"></div>',
+            iconSize: [20, 20],
+            iconAnchor: [10, 10]
+          });
+          if (gpsMarker) {
+            map.removeLayer(gpsMarker);
+          }
+          gpsMarker = L.marker([lat, lon], { icon: gpsIcon }).addTo(map);
+          gpsMarker.bindPopup("<b>Your Current Location</b>");
+          
+          setStatus("success", "Found your current location!");
+        },
+        (error) => {
+          console.warn("[GPS] Location access denied or failed:", error.message);
+          setStatus("success", "Loaded default region (Delhi). Allow GPS permissions to use your location.");
+        },
+        { enableHighAccuracy: true, timeout: 6000 }
+      );
+    }
+  }, 800);
 });
 
 function formatHour(h) { return String(h).padStart(2,"0") + ":00"; }
@@ -858,6 +1466,7 @@ async function findRoutes(route_overrides = null, seg_overrides = null) {
     routeYoloOverrides = {};
     segmentOverrides   = {};
     segmentYoloResults = {};
+    activeRouteName    = null;
     clearSegmentMarkers();
     document.getElementById("segment-panel").style.display = "none";
   }
@@ -869,6 +1478,7 @@ async function findRoutes(route_overrides = null, seg_overrides = null) {
   routeLayers = [];
   document.getElementById("results-panel").style.display = "none";
   document.getElementById("plot-panel").style.display    = "none";
+  document.getElementById("floating-route-summary").style.display = "none";
 
   const isOverride = route_overrides || seg_overrides;
   const label = isOverride
@@ -876,9 +1486,19 @@ async function findRoutes(route_overrides = null, seg_overrides = null) {
     : "Computing base routes";
   setStatus("loading", `<span class="spinner"></span>${label}...`);
   document.getElementById("route-btn").disabled = true;
+  const floatBtn = document.getElementById("floating-route-btn");
+  if (floatBtn) floatBtn.disabled = true;
 
   try {
-    const body = { city, origin_lat:olat, origin_lon:olon, dest_lat:dlat, dest_lon:dlon, hour };
+    const body = { 
+      city, 
+      origin_lat: olat, 
+      origin_lon: olon, 
+      dest_lat: dlat, 
+      dest_lon: dlon, 
+      hour,
+      vehicle_type: currentVehicleType
+    };
     if (route_overrides) body.route_overrides   = route_overrides;
     if (seg_overrides)   body.segment_overrides = seg_overrides;
 
@@ -904,6 +1524,7 @@ async function findRoutes(route_overrides = null, seg_overrides = null) {
     setStatus("error", `Connection error: ${e.message}. Start server: python serve.py`);
   } finally {
     document.getElementById("route-btn").disabled = false;
+    if (floatBtn) floatBtn.disabled = false;
   }
 }
 
@@ -913,24 +1534,76 @@ function drawRoutes(data) {
     "Shortest Distance":"#3B82F6","Fastest Time":"#F59E0B",
     "Lowest Emission":"#10B981","Balanced":"#8B5CF6"
   };
-  for (const [name, coords] of Object.entries(data.routes_latlng || {})) {
+  const showTraffic = document.getElementById("show-route-traffic").checked;
+  
+  // Clear existing layers
+  routeLayers.forEach(l => map.removeLayer(l));
+  routeLayers = [];
+  
+  if (!activeRouteName) {
+    activeRouteName = data.best_route;
+  }
+  
+  // Draw all routes (non-active first, then active on top)
+  const routeNames = Object.keys(data.routes_latlng || {});
+  routeNames.sort((a, b) => {
+    if (a === activeRouteName) return 1;
+    if (b === activeRouteName) return -1;
+    return 0;
+  });
+  
+  for (const name of routeNames) {
+    const coords = data.routes_latlng[name];
     if (!coords || coords.length === 0) continue;
     const color  = colorMap[name] || "#aaa";
-    const isBest = name === data.best_route;
-    const layer  = L.polyline(coords, {
-      color, weight: isBest ? 7 : 4,
-      opacity: isBest ? 0.98 : 0.55,
+    const isActive = name === activeRouteName;
+    
+    // Draw background route line
+    const baseLayer = L.polyline(coords, {
+      color, 
+      weight: isActive ? 7 : 4,
+      opacity: isActive ? (showTraffic ? 0.35 : 0.98) : 0.18,
       dashArray: name === "Balanced" ? "8 4" : null,
     }).addTo(map);
-    layer.bindPopup(
-      `<b style="color:${color}">${name}</b>${isBest?' ⭐ BEST':''}<br/>
+    
+    baseLayer.bindPopup(
+      `<b style="color:${color}">${name}</b>${name === data.best_route ?' ⭐ BEST ECO':''}<br/>
        ${data.stats[name]?.distance_km||"?"} km | ${data.stats[name]?.time_min||"?"} min<br/>
-       Emission Factor: <b>${(data.stats[name]?.emission_factor||0).toLocaleString(undefined,{maximumFractionDigits:0})}</b> g CO₂`
+       CO₂ Emissions: <b>${(data.stats[name]?.trip_co2_g||0).toLocaleString(undefined,{maximumFractionDigits:0})} g</b>`
     );
-    routeLayers.push(layer);
+    
+    // Clicking on a route line highlights it
+    baseLayer.on('click', () => {
+      selectActiveRoute(name);
+    });
+    
+    routeLayers.push(baseLayer);
+    
+    // If showTraffic is enabled, draw major segments in traffic colors on top of the active route ONLY
+    if (showTraffic && isActive && data.route_segments && data.route_segments[name]) {
+      data.route_segments[name].forEach(seg => {
+        if (seg.coords && seg.coords.length > 0) {
+          const segColor = seg.speed_category === "congested" ? "#EF4444"
+                         : seg.speed_category === "slow" ? "#F97316"
+                         : seg.speed_category === "moderate" ? "#FBBF24"
+                         : "#10B981";
+          
+          const segLayer = L.polyline(seg.coords, {
+            color: segColor,
+            weight: 5,
+            opacity: 0.95,
+          }).addTo(map);
+          
+          segLayer.bindPopup(
+            `<b style="color:${color}">${name}</b> (${seg.name})<br/>
+             Speed: <b>${seg.avg_speed_kmh} km/h</b> (${seg.speed_category.toUpperCase()})<br/>
+             Segment CO₂: <b>${seg.emission_factor} g</b>`
+          );
+          routeLayers.push(segLayer);
+        }
+      });
+    }
   }
-  // Bring best route to front
-  routeLayers.filter(l=>l.options.weight===7).forEach(l=>l.bringToFront());
 }
 
 // ── Results panel ──────────────────────────────────────────────────────────
@@ -945,19 +1618,66 @@ function showResults(data) {
   const s    = data.stats;
   const best = data.best_route;
 
-  // Savings banner
+  if (!activeRouteName) {
+    activeRouteName = best;
+  }
+
+  // Savings banner in sidebar
   if (s["Shortest Distance"] && s["Lowest Emission"]) {
-    const saved    = s["Shortest Distance"].emission_factor - s["Lowest Emission"].emission_factor;
-    const pct      = (saved / s["Shortest Distance"].emission_factor * 100).toFixed(1);
+    const saved    = s["Shortest Distance"].trip_co2_g - s["Lowest Emission"].trip_co2_g;
+    const pct      = (saved / s["Shortest Distance"].trip_co2_g * 100).toFixed(1);
     const extraKm  = (s["Lowest Emission"].distance_km  - s["Shortest Distance"].distance_km).toFixed(2);
     const extraMin = (s["Lowest Emission"].time_min     - s["Shortest Distance"].time_min).toFixed(1);
+    
+    // Update sidebar savings
     savingsBox.innerHTML = `
       <div class="savings-banner">
         <div class="savings-val">${saved.toLocaleString(undefined,{maximumFractionDigits:0})} g CO₂ saved</div>
         <p>Eco-route vs shortest · ${pct}% less emissions</p>
         <p style="margin-top:4px;">+${extraKm} km | +${extraMin} min extra</p>
       </div>`;
-  } else { savingsBox.innerHTML = ""; }
+      
+    // Update floating card savings
+    if (saved > 0 && currentVehicleType !== "ev" && currentVehicleType !== "bicycle") {
+      document.getElementById("summary-savings-text").textContent = `Eco-Route Saves ${saved.toLocaleString(undefined, {maximumFractionDigits:0})}g CO₂`;
+      document.getElementById("summary-savings-desc").textContent = `vs shortest route (${pct}% less emissions)`;
+    } else if (currentVehicleType === "ev" || currentVehicleType === "bicycle") {
+      document.getElementById("summary-savings-text").textContent = `Eco-Friendly Travel`;
+      document.getElementById("summary-savings-desc").textContent = `0 g tailpipe emissions!`;
+    } else {
+      document.getElementById("summary-savings-text").textContent = `Optimal Route Selected`;
+      document.getElementById("summary-savings-desc").textContent = `Minimal emissions path active.`;
+    }
+  } else { 
+    savingsBox.innerHTML = "";
+    document.getElementById("summary-savings-text").textContent = `Route Calculated`;
+    document.getElementById("summary-savings-desc").textContent = `Routes processed successfully.`;
+  }
+
+  // Render interactive route tabs in the floating card
+  const tabsContainer = document.getElementById("summary-route-tabs-container");
+  if (tabsContainer) {
+    tabsContainer.innerHTML = Object.entries(s).map(([name, st]) => {
+      const color  = colorMap[name] || "#aaa";
+      const isBest = name === best;
+      const isActive = name === activeRouteName;
+      return `
+        <div class="summary-route-tab-item${isActive ? ' active' : ''}" onclick="selectActiveRoute('${name}')">
+          <div class="summary-route-tab-title">
+            <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color};"></span>
+            <span style="color:${isActive ? 'var(--text)' : 'var(--muted)'};">${name}</span>
+            ${isBest ? '<span style="font-size:0.6rem; background:rgba(16,185,129,0.2); color:var(--accent); padding:1px 6px; border-radius:10px; margin-left:4px;">BEST ECO</span>' : ''}
+          </div>
+          <div class="summary-route-tab-meta">
+            <span>${st.distance_km} km</span> &middot; 
+            <span>${st.time_min} min</span> &middot; 
+            <span style="color:${color}; font-weight:700;">${st.trip_co2_g.toLocaleString(undefined,{maximumFractionDigits:0})} g</span>
+          </div>
+        </div>`;
+    }).join("");
+  }
+
+  document.getElementById("floating-route-summary").style.display = "flex";
 
   // Route cards with per-route upload
   cardsDiv.innerHTML = Object.entries(s).map(([name, st]) => {
@@ -978,8 +1698,8 @@ function showResults(data) {
           <div class="stat-item"><div class="stat-label">Distance</div><div class="stat-value">${st.distance_km} km</div></div>
           <div class="stat-item"><div class="stat-label">Time</div><div class="stat-value">${st.time_min} min</div></div>
           <div class="stat-item" style="grid-column:1/-1;">
-            <div class="stat-label">Emission Factor (g CO₂)</div>
-            <div class="stat-value" style="color:${color};font-size:1.05rem;">${st.emission_factor.toLocaleString(undefined,{maximumFractionDigits:0})}</div>
+            <div class="stat-label">Trip CO₂ Emissions</div>
+            <div class="stat-value" style="color:${color};font-size:1.05rem;">${st.trip_co2_g.toLocaleString(undefined,{maximumFractionDigits:0})} g</div>
           </div>
 
           <div class="stat-item"><div class="stat-label">Segments</div><div class="stat-value">${st.segments}</div></div>
