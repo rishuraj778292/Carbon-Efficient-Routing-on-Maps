@@ -1,0 +1,260 @@
+{
+  "delhi": {
+    "city_name": "Delhi",
+    "state_name": "Delhi NCT",
+    "center": {
+      "lat": 28.6180,
+      "lon": 77.2180
+    },
+    "buffer_degrees": 0.07,
+    "description": "Covers Central Delhi (Connaught Place, India Gate), Karol Bagh, Red Fort, Humayun's Tomb, and adjacent zones.",
+    "landmarks": [
+      {
+        "name": "Connaught Place",
+        "lat": 28.6304,
+        "lon": 77.2177,
+        "type": "Commercial Center"
+      },
+      {
+        "name": "India Gate",
+        "lat": 28.6129,
+        "lon": 77.2295,
+        "type": "Monument"
+      },
+      {
+        "name": "Red Fort",
+        "lat": 28.6562,
+        "lon": 77.2410,
+        "type": "Historical Site"
+      },
+      {
+        "name": "Karol Bagh",
+        "lat": 28.6444,
+        "lon": 77.1906,
+        "type": "Commercial / Residential"
+      },
+      {
+        "name": "Pragati Maidan",
+        "lat": 28.6148,
+        "lon": 77.2435,
+        "type": "Exhibition Ground"
+      },
+      {
+        "name": "Humayun's Tomb",
+        "lat": 28.5933,
+        "lon": 77.2507,
+        "type": "Historical Site"
+      },
+      {
+        "name": "Supreme Court",
+        "lat": 28.6173,
+        "lon": 77.2416,
+        "type": "Government Landmark"
+      }
+    ]
+  },
+  "noida": {
+    "city_name": "Noida",
+    "state_name": "Uttar Pradesh",
+    "center": {
+      "lat": 28.5600,
+      "lon": 77.3450
+    },
+    "buffer_degrees": 0.075,
+    "description": "Covers Noida Sector 15, 16, 18, Botanical Garden, Sector 62 (IT Hub), Sector 50, and Okhla Bird Sanctuary.",
+    "landmarks": [
+      {
+        "name": "Sector 18 (Commercial Hub)",
+        "lat": 28.5708,
+        "lon": 77.3261,
+        "type": "Commercial / Shopping"
+      },
+      {
+        "name": "Botanical Garden Metro Station",
+        "lat": 28.5641,
+        "lon": 77.3342,
+        "type": "Transit Hub"
+      },
+      {
+        "name": "Okhla Bird Sanctuary",
+        "lat": 28.5562,
+        "lon": 77.3601,
+        "type": "Nature Reserve"
+      },
+      {
+        "name": "Sector 62 (IT Hub)",
+        "lat": 28.6219,
+        "lon": 77.3639,
+        "type": "Business Hub"
+      },
+      {
+        "name": "Noida Sector 50",
+        "lat": 28.5714,
+        "lon": 77.3712,
+        "type": "Residential Area"
+      },
+      {
+        "name": "Noida Sector 15",
+        "lat": 28.5786,
+        "lon": 77.3114,
+        "type": "Residential / Commercial"
+      }
+    ]
+  },
+  "mumbai": {
+    "city_name": "Mumbai",
+    "state_name": "Maharashtra",
+    "center": {
+      "lat": 18.9400,
+      "lon": 72.8250
+    },
+    "buffer_degrees": 0.07,
+    "description": "Covers South Mumbai region including Colaba, Marine Drive, Crawford Market, and Byculla.",
+    "landmarks": [
+      {
+        "name": "Gateway of India",
+        "lat": 18.9220,
+        "lon": 72.8347,
+        "type": "Historical Monument"
+      },
+      {
+        "name": "Marine Drive",
+        "lat": 18.9436,
+        "lon": 72.8231,
+        "type": "Scenic Promenade"
+      },
+      {
+        "name": "Chhatrapati Shivaji Terminus (CST)",
+        "lat": 18.9400,
+        "lon": 72.8354,
+        "type": "Transit Hub"
+      },
+      {
+        "name": "Girgaon Chowpatty",
+        "lat": 18.9542,
+        "lon": 72.8120,
+        "type": "Beach / Recreation"
+      },
+      {
+        "name": "Crawford Market",
+        "lat": 18.9472,
+        "lon": 72.8335,
+        "type": "Market"
+      },
+      {
+        "name": "Byculla Zoo",
+        "lat": 18.9774,
+        "lon": 72.8346,
+        "type": "Recreation"
+      },
+      {
+        "name": "Colaba Causeway",
+        "lat": 18.9138,
+        "lon": 72.8281,
+        "type": "Commercial Street"
+      }
+    ]
+  },
+  "bangalore": {
+    "city_name": "Bangalore",
+    "state_name": "Karnataka",
+    "center": {
+      "lat": 12.9600,
+      "lon": 77.6050
+    },
+    "buffer_degrees": 0.07,
+    "description": "Covers Central Bangalore including MG Road, Vidhana Soudha, Cubbon Park, Indiranagar, and Koramangala.",
+    "landmarks": [
+      {
+        "name": "Vidhana Soudha",
+        "lat": 12.9796,
+        "lon": 77.5906,
+        "type": "Government Landmark"
+      },
+      {
+        "name": "MG Road Metro Station",
+        "lat": 12.9754,
+        "lon": 77.6067,
+        "type": "Transit / Commercial"
+      },
+      {
+        "name": "Koramangala (Sector 5)",
+        "lat": 12.9352,
+        "lon": 77.6245,
+        "type": "Residential / Commercial Hub"
+      },
+      {
+        "name": "Cubbon Park",
+        "lat": 12.9737,
+        "lon": 77.5960,
+        "type": "Park"
+      },
+      {
+        "name": "Lalbagh Botanical Garden",
+        "lat": 12.9507,
+        "lon": 77.5844,
+        "type": "Botanical Garden"
+      },
+      {
+        "name": "Indiranagar",
+        "lat": 12.9719,
+        "lon": 77.6412,
+        "type": "Commercial / Dining Hub"
+      },
+      {
+        "name": "Bangalore Palace",
+        "lat": 12.9980,
+        "lon": 77.5920,
+        "type": "Historical Site"
+      }
+    ]
+  },
+  "kolkata": {
+    "city_name": "Kolkata",
+    "state_name": "West Bengal",
+    "center": {
+      "lat": 22.5726,
+      "lon": 88.3639
+    },
+    "buffer_degrees": 0.05,
+    "description": "Covers central Kolkata, Howrah Bridge, Victoria Memorial, and Park Street.",
+    "landmarks": [
+      {
+        "name": "Esplanade / BBD Bagh",
+        "lat": 22.5680,
+        "lon": 88.3512,
+        "type": "Central Business District"
+      },
+      {
+        "name": "Sealdah Station",
+        "lat": 22.5756,
+        "lon": 88.3697,
+        "type": "Transit Hub"
+      },
+      {
+        "name": "Howrah Bridge",
+        "lat": 22.5851,
+        "lon": 88.3468,
+        "type": "Historical Landmark"
+      },
+      {
+        "name": "Victoria Memorial",
+        "lat": 22.5448,
+        "lon": 88.3426,
+        "type": "Monument / Park"
+      },
+      {
+        "name": "Park Street",
+        "lat": 22.5487,
+        "lon": 88.3531,
+        "type": "Commercial Street"
+      },
+      {
+        "name": "Science City",
+        "lat": 22.5392,
+        "lon": 88.3962,
+        "type": "Science Center"
+      }
+    ]
+  }
+}

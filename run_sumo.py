@@ -328,7 +328,6 @@ def write_sumo_config(net_path: Path, rou_path: Path,
     gui_xml = """<?xml version="1.0" encoding="UTF-8"?>
 <viewsettings>
     <delay value="50"/>
-    <scheme name="real world"/>
 </viewsettings>"""
     (out_dir / "gui_settings.xml").write_text(gui_xml, encoding="utf-8")
 
@@ -340,7 +339,10 @@ def write_sumo_config(net_path: Path, rou_path: Path,
 # STEP 5 — Run SUMO via TraCI and collect edge-level CO2 data
 # ─────────────────────────────────────────────────────────────────────────────
 def run_sumo_traci(cfg_path: Path, out_dir: Path,
-                   sim_steps: int, use_gui: bool) -> pd.DataFrame:
+                   sim_steps: int, use_gui: bool,
+                   origin_lat: float = None, origin_lon: float = None,
+                   dest_lat: float = None, dest_lon: float = None,
+                   selected_route: str = None) -> pd.DataFrame:
     print(f"[5/6] Running SUMO simulation ({sim_steps}s)...")
     if use_gui:
         print("      GUI mode — close SUMO window when done")
@@ -367,14 +369,195 @@ def run_sumo_traci(cfg_path: Path, out_dir: Path,
             print(f"        Try without --gui first: python run_sumo.py --city kolkata")
         return pd.DataFrame()
 
+    # ── Set up custom vehicles and tracking ──────────────────────────────────
+    has_custom_route = False
+    target_vehicle_id = "My_Car"
+    if origin_lat is not None and origin_lon is not None and dest_lat is not None and dest_lon is not None:
+        try:
+            city_name = cfg_path.parent.name
+            # Import build_emission_graph and load G
+            sys.path.insert(0, str(Path(__file__).parent))
+            from eco_route_engine import build_emission_graph
+            G = build_emission_graph(city=city_name, use_ml=True)
+            
+            if G.number_of_nodes() > 0:
+                import sumolib
+                net_files = list(out_dir.glob("*.net.xml"))
+                if net_files:
+                    net = sumolib.net.readNet(str(net_files[0]))
+                    # Convert origin and destination coordinates
+                    orig_x, orig_y = net.convertLonLat2XY(origin_lon, origin_lat)
+                    dest_x, dest_y = net.convertLonLat2XY(dest_lon, dest_lat)
+                    
+                    start_edges = net.getNeighboringEdges(orig_x, orig_y, 1000.0)
+                    end_edges = net.getNeighboringEdges(dest_x, dest_y, 1000.0)
+                    
+                    if start_edges and end_edges:
+                        # Build WAY ID to G edge data lookup
+                        way_to_edge_data = {}
+                        for u, v, data in G.edges(data=True):
+                            osmid = data.get("osmid", "")
+                            if isinstance(osmid, list):
+                                for o in osmid:
+                                    way_to_edge_data[str(o)] = data
+                            elif osmid:
+                                way_to_edge_data[str(osmid)] = data
+                                
+                        def get_osm_way_id(sumo_eid):
+                            s = sumo_eid
+                            if s.startswith("-"):
+                                s = s[1:]
+                            return s.split("#")[0]
+                            
+                        # Store original travel times
+                        original_times = {}
+                        for eid in traci.edge.getIDList():
+                            original_times[eid] = traci.edge.getTraveltime(eid)
+                            
+                        # Weights functions
+                        def get_fastest_weight(eid):
+                            data = way_to_edge_data.get(get_osm_way_id(eid))
+                            if data:
+                                speed = max(float(data.get("avg_speed", 30)), 5.0)
+                                return float(data.get("length", 50)) / (speed * 1000 / 3600)
+                            return 1.0
+                            
+                        def get_eco_weight(eid):
+                            data = way_to_edge_data.get(get_osm_way_id(eid))
+                            if data:
+                                return float(data.get("emission_factor", 1.0)) * float(data.get("length", 50)) / 1000.0
+                            return 1.0
+                            
+                        def get_balanced_weight(eid):
+                            t = get_fastest_weight(eid)
+                            e = get_eco_weight(eid)
+                            return 0.5 * t + 0.5 * e
+
+                        def get_shortest_weight(eid):
+                            data = way_to_edge_data.get(get_osm_way_id(eid))
+                            if data:
+                                return float(data.get("length", 50))
+                            return 1.0
+                            
+                        # Map selected_route string to weight function
+                        strategy_name = "eco"
+                        weight_func = get_eco_weight
+                        car_color = (0, 255, 0, 255) # Green default
+                        
+                        if selected_route:
+                            sel_lower = selected_route.lower()
+                            if "fastest" in sel_lower:
+                                strategy_name = "fastest"
+                                weight_func = get_fastest_weight
+                                car_color = (255, 165, 0, 255) # Orange
+                            elif "balanced" in sel_lower:
+                                strategy_name = "balanced"
+                                weight_func = get_balanced_weight
+                                car_color = (128, 0, 128, 255) # Purple
+                            elif "shortest" in sel_lower:
+                                strategy_name = "shortest"
+                                weight_func = get_shortest_weight
+                                car_color = (0, 191, 255, 255) # Cyan
+
+                        # Filter snapped edges for passenger vehicle allowance
+                        start_edges_filtered = [e for e in start_edges if e[0].allows("passenger")]
+                        end_edges_filtered = [e for e in end_edges if e[0].allows("passenger")]
+                        
+                        if not start_edges_filtered:
+                            start_edges_filtered = start_edges
+                        if not end_edges_filtered:
+                            end_edges_filtered = end_edges
+
+                        start_edge = None
+                        end_edge = None
+                        route_res = None
+                        found_path = False
+
+                        print(f"[SUMO] Searching connected route between snaps...")
+                        # Loop to find first connected pair
+                        for se_obj, se_dist in sorted(start_edges_filtered, key=lambda x: x[1]):
+                            se_id = se_obj.getID()
+                            for ee_obj, ee_dist in sorted(end_edges_filtered, key=lambda x: x[1]):
+                                ee_id = ee_obj.getID()
+                                if se_id == ee_id:
+                                    continue
+                                try:
+                                    # Temporarily apply weight_func to calculate path
+                                    for eid in traci.edge.getIDList():
+                                        traci.edge.adaptTraveltime(eid, weight_func(eid))
+                                    res = traci.simulation.findRoute(se_id, ee_id)
+                                    # Restore original times
+                                    for eid, orig_t in original_times.items():
+                                        traci.edge.adaptTraveltime(eid, orig_t)
+                                        
+                                    if res and len(res.edges) > 0:
+                                        start_edge = se_id
+                                        end_edge = ee_id
+                                        route_res = res
+                                        found_path = True
+                                        print(f"[SUMO] Snapped coordinates successfully to a connected route:")
+                                        print(f"      Origin: ({origin_lat:.5f}, {origin_lon:.5f}) -> Snapped Edge: {start_edge}")
+                                        print(f"      Dest:   ({dest_lat:.5f}, {dest_lon:.5f}) -> Snapped Edge: {end_edge}")
+                                        print(f"      Route length: {len(route_res.edges)} edges")
+                                        break
+                                except Exception:
+                                    pass
+                            if found_path:
+                                break
+
+                        if not found_path:
+                            print(f"[WARN] SUMO could not find any connected route between neighbors of origin and destination!")
+                            # Fallback to absolute closest if nothing worked, to report error normally
+                            start_edge = sorted(start_edges, key=lambda x: x[1])[0][0].getID()
+                            end_edge = sorted(end_edges, key=lambda x: x[1])[0][0].getID()
+                            
+                        if route_res and len(route_res.edges) > 0:
+                            # Highlight lanes of this route in bright Cyan
+                            for eid in route_res.edges:
+                                try:
+                                    num_lanes = traci.edge.getLaneNumber(eid)
+                                    for l in range(num_lanes):
+                                        traci.lane.setColor(f"{eid}_{l}", (0, 255, 255, 255))
+                                except Exception:
+                                    pass
+                                    
+                            route_name = "selected_route_path"
+                            traci.route.add(route_name, route_res.edges)
+                            # Add exactly one vehicle
+                            traci.vehicle.add(target_vehicle_id, route_name, typeID="car_petrol", depart=str(traci.simulation.getTime()))
+                            traci.vehicle.setColor(target_vehicle_id, car_color)
+                            print(f"[SUMO] Added single target car '{target_vehicle_id}' ({strategy_name}) on highlighted route of {len(route_res.edges)} edges.")
+                            has_custom_route = True
+                    else:
+                        print(f"[WARN] SUMO could not snap coordinates to neighboring edges within 1km!")
+                        if not start_edges:
+                            print(f"       Failed to snap origin: ({origin_lat:.5f}, {origin_lon:.5f})")
+                        if not end_edges:
+                            print(f"       Failed to snap dest: ({dest_lat:.5f}, {dest_lon:.5f})")
+        except Exception as ex:
+            print(f"[WARN] Could not initialize custom strategy vehicles in TraCI: {ex}")
+
     edge_data = {}
     step = 0
     sample_every = max(10, sim_steps // 30)  # ~30 samples max
+    gui_tracked = False
 
     try:
         while traci.simulation.getMinExpectedNumber() > 0 and step < sim_steps:
             traci.simulationStep()
             step += 1
+
+            # Zoom and track the target vehicle at start
+            if use_gui and has_custom_route and not gui_tracked:
+                try:
+                    loaded_vehs = traci.vehicle.getIDList()
+                    if target_vehicle_id in loaded_vehs:
+                        traci.gui.trackVehicle("View #0", target_vehicle_id)
+                        traci.gui.setZoom("View #0", 1500.0)  # nice close tracking zoom
+                        gui_tracked = True
+                        print(f"[SUMO] Camera tracking active for target vehicle: {target_vehicle_id}")
+                except Exception as ge:
+                    pass
 
             if step % sample_every == 0:
                 pct = step / sim_steps * 100
@@ -554,6 +737,11 @@ def main():
                         help="Skip SUMO, run eco-routing with physics fallback only")
     parser.add_argument("--force",    action="store_true",
                         help="Re-download/re-convert even if files exist")
+    parser.add_argument("--origin-lat", type=float, help="Custom origin latitude")
+    parser.add_argument("--origin-lon", type=float, help="Custom origin longitude")
+    parser.add_argument("--dest-lat", type=float, help="Custom destination latitude")
+    parser.add_argument("--dest-lon", type=float, help="Custom destination longitude")
+    parser.add_argument("--selected-route", type=str, help="Selected route name from frontend")
     args = parser.parse_args()
 
     city_key = args.city.lower().replace(" ", "_")
@@ -568,6 +756,16 @@ def main():
             "label":      args.city,
             "data_dir":   city_key,
         }
+
+    # Override config coordinate presets if custom values are provided
+    if args.origin_lat is not None:
+        city_cfg["origin_lat"] = args.origin_lat
+    if args.origin_lon is not None:
+        city_cfg["origin_lon"] = args.origin_lon
+    if args.dest_lat is not None:
+        city_cfg["dest_lat"] = args.dest_lat
+    if args.dest_lon is not None:
+        city_cfg["dest_lon"] = args.dest_lon
 
     out_dir = Path(city_cfg["data_dir"])
     out_dir.mkdir(exist_ok=True)
@@ -589,7 +787,14 @@ def main():
         net_path = convert_to_sumo_net(osm_path, out_dir)
         rou_path = generate_routes(net_path, out_dir, args.vehicles, args.steps)
         cfg_path = write_sumo_config(net_path, rou_path, out_dir, args.steps)
-        sumo_df  = run_sumo_traci(cfg_path, out_dir, args.steps, args.gui)
+        sumo_df  = run_sumo_traci(
+            cfg_path, out_dir, args.steps, args.gui,
+            origin_lat=city_cfg.get("origin_lat"),
+            origin_lon=city_cfg.get("origin_lon"),
+            dest_lat=city_cfg.get("dest_lat"),
+            dest_lon=city_cfg.get("dest_lon"),
+            selected_route=args.selected_route
+        )
 
     # Step 6: Eco-routing + explanation
     if city_cfg["origin_lat"]:

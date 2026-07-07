@@ -423,7 +423,7 @@ def api_upload_city():
         if file.filename == "":
             return jsonify({"error": "Empty filename"}), 400
             
-        city_dir = BASE_DIR / city_name
+        city_dir = BASE_DIR / "cities" / city_name
         city_dir.mkdir(parents=True, exist_ok=True)
         
         # Save zip to temp
@@ -440,6 +440,14 @@ def api_upload_city():
                 zip_ref.extract(member, str(city_dir))
             
         os.unlink(tmp_path)
+
+        # Pre-compile graph cache (.gpickle) so future requests are instantaneous
+        try:
+            from eco_route_engine import build_emission_graph
+            print(f"[UPLOAD] Compiling and caching graph for {city_name}...")
+            build_emission_graph(city=city_name)
+        except Exception as compile_err:
+            print(f"[UPLOAD] Graph compilation failed or deferred: {compile_err}")
         
         return jsonify({"success": True, "message": f"Successfully uploaded and extracted data for {city_name.title()}."})
     except Exception as e:
@@ -461,6 +469,12 @@ def api_sumo():
     vehicles   = int(body.get("vehicles",  200))
     hour       = int(body.get("hour",        8))
     skip_sumo  = bool(body.get("skip_sumo", True))
+    use_gui    = bool(body.get("use_gui",   False))
+    origin_lat = body.get("origin_lat")
+    origin_lon = body.get("origin_lon")
+    dest_lat   = body.get("dest_lat")
+    dest_lon   = body.get("dest_lon")
+    selected_route = body.get("selected_route")
 
     task_id = str(uuid.uuid4())[:8]
     _sumo_tasks[task_id] = {
@@ -473,7 +487,7 @@ def api_sumo():
     def _run():
         try:
             cmd = [
-                sys.executable, str(BASE_DIR / "run_sumo.py"),
+                sys.executable, "-u", str(BASE_DIR / "run_sumo.py"),
                 "--city",     city,
                 "--steps",    str(steps),
                 "--vehicles", str(vehicles),
@@ -481,6 +495,19 @@ def api_sumo():
             ]
             if skip_sumo:
                 cmd.append("--skip-sumo")
+            elif use_gui:
+                cmd.append("--gui")
+
+            if origin_lat is not None:
+                cmd.extend(["--origin-lat", str(origin_lat)])
+            if origin_lon is not None:
+                cmd.extend(["--origin-lon", str(origin_lon)])
+            if dest_lat is not None:
+                cmd.extend(["--dest-lat", str(dest_lat)])
+            if dest_lon is not None:
+                cmd.extend(["--dest-lon", str(dest_lon)])
+            if selected_route:
+                cmd.extend(["--selected-route", str(selected_route)])
 
             proc = subprocess.Popen(
                 cmd,

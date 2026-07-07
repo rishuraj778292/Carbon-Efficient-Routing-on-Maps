@@ -16,6 +16,8 @@ Features:
 """
 
 import json
+import pickle
+from scipy.spatial import cKDTree
 import math
 import os
 import random
@@ -371,6 +373,27 @@ def _load_model_bundle():
         return None
 
 
+def safe_float(val, default=0.0):
+    if val is None:
+        return default
+    if hasattr(val, "__iter__") and not isinstance(val, str):
+        items = list(val)
+        val = items[0] if items else default
+    try:
+        import pandas as _pd
+        if _pd.isna(val):
+            return default
+    except Exception:
+        pass
+    try:
+        s_str = str(val).replace("km/h", "").replace(" mph", "").replace("m", "").strip()
+        return float(s_str)
+    except (ValueError, TypeError):
+        return default
+
+def safe_int(val, default=0):
+    return int(safe_float(val, float(default)))
+
 def predict_emission_factor(row: dict, vehicle_info: dict, hour: int = None) -> float:
     """
     Predict emission_factor for one road segment.
@@ -381,23 +404,23 @@ def predict_emission_factor(row: dict, vehicle_info: dict, hour: int = None) -> 
     if bundle is None:
         return physics_emission_factor(
             vehicle_count=vehicle_info["total"],
-            avg_speed=float(row.get("avg_speed_kmph", 35)),
-            length_m=float(row.get("length", 100)),
+            avg_speed=safe_float(row.get("avg_speed_kmph"), 35.0),
+            length_m=safe_float(row.get("length"), 100.0),
             co2_per_km=vehicle_info.get("co2_per_km_g"),
-            building_density=int(row.get("building_density", 5)),
-            vegetation_score=int(row.get("vegetation_score", 2)),
-            aqi=int(row.get("AQI", 100)),
+            building_density=safe_int(row.get("building_density"), 5),
+            vegetation_score=safe_int(row.get("vegetation_score"), 2),
+            aqi=safe_int(row.get("AQI"), 100),
         )
 
     row_input = {
-        "length":             float(row.get("length", 100)),
-        "lanes":              float(row.get("lanes") or 1),
-        "building_density":   int(row.get("building_density", 5)),
-        "vegetation_score":   int(row.get("vegetation_score", 2)),
-        "maxspeed":           float(row.get("maxspeed") or 40),
-        "width":              float(row.get("width") or 8),
+        "length":             safe_float(row.get("length"), 100.0),
+        "lanes":              safe_float(row.get("lanes"), 1.0),
+        "building_density":   safe_int(row.get("building_density"), 5),
+        "vegetation_score":   safe_int(row.get("vegetation_score"), 2),
+        "maxspeed":           safe_float(row.get("maxspeed"), 40.0),
+        "width":              safe_float(row.get("width"), 8.0),
         "vehicle_count":      vehicle_info["total"],
-        "avg_speed_kmph":     float(row.get("avg_speed_kmph", 35)),
+        "avg_speed_kmph":     safe_float(row.get("avg_speed_kmph"), 35.0),
         "n_car":              vehicle_info.get("n_car", 0),
         "n_motorcycle":       vehicle_info.get("n_motorcycle", 0),
         "n_bus":              vehicle_info.get("n_bus", 0),
@@ -406,17 +429,17 @@ def predict_emission_factor(row: dict, vehicle_info: dict, hour: int = None) -> 
         "n_bicycle":          vehicle_info.get("n_bicycle", 0),
         "n_auto":             vehicle_info.get("n_auto", 0),
         "co2_per_km_g":       vehicle_info.get("co2_per_km_g", 10000),
-        "pm2_5_ugm3":         float(row.get("pm2_5_ugm3", 40)),
-        "pm10_ugm3":          float(row.get("pm10_ugm3", 50)),
-        "no2_ugm3":           float(row.get("no2_ugm3", 1.5)),
-        "o3_ugm3":            float(row.get("o3_ugm3", 160)),
-        "so2_ugm3":           float(row.get("so2_ugm3", 3)),
-        "co_ugm3":            float(row.get("co_ugm3", 300)),
-        "AQI":                int(row.get("AQI", 100)),
-        "openweather_aqi_1to5": int(row.get("openweather_aqi_1to5", 3)),
-        "temperature_k":      float(row.get("temperature_k", 305)),
-        "humidity_pct":       float(row.get("humidity_pct", 70)),
-        "wind_speed_mps":     float(row.get("wind_speed_mps", 1)),
+        "pm2_5_ugm3":         safe_float(row.get("pm2_5_ugm3"), 40.0),
+        "pm10_ugm3":          safe_float(row.get("pm10_ugm3"), 50.0),
+        "no2_ugm3":           safe_float(row.get("no2_ugm3"), 1.5),
+        "o3_ugm3":            safe_float(row.get("o3_ugm3"), 160.0),
+        "so2_ugm3":           safe_float(row.get("so2_ugm3"), 3.0),
+        "co_ugm3":            safe_float(row.get("co_ugm3"), 300.0),
+        "AQI":                safe_int(row.get("AQI"), 100),
+        "openweather_aqi_1to5": safe_int(row.get("openweather_aqi_1to5"), 3),
+        "temperature_k":      safe_float(row.get("temperature_k"), 305.0),
+        "humidity_pct":       safe_float(row.get("humidity_pct"), 70.0),
+        "wind_speed_mps":     safe_float(row.get("wind_speed_mps"), 1.0),
     }
     
     emit = {"n_car": 120, "n_motorcycle": 72, "n_bus": 822,
@@ -534,40 +557,60 @@ def download_and_fuse_bbox(olat: float, olon: float, dlat: float, dlon: float, c
         print(f"[WARN] Failed to download vegetation: {e}. Using empty vegetation dataset.")
         vegetation = gpd.GeoDataFrame(columns=["geometry"], crs="EPSG:3857")
 
-    # Compute building density (50m buffer)
-    print("[FUSION] Computing building density...")
-    building_counts = []
+    # Compute building density (50m buffer) using vectorized spatial join
+    print("[FUSION] Computing building density (vectorized)...")
+    building_counts = [0] * len(edges)
     if not buildings.empty and "geometry" in buildings.columns:
-        buildings_sindex = buildings.sindex
-        for idx, road in edges.iterrows():
+        try:
+            buffered_edges = gpd.GeoDataFrame(geometry=edges.geometry.buffer(50), crs=edges.crs).reset_index()
+            joined = gpd.sjoin(buildings, buffered_edges, how="inner", predicate="intersects")
+            if not joined.empty:
+                counts = joined["index_right"].value_counts()
+                building_counts = [int(counts.get(i, 0)) for i in range(len(edges))]
+        except Exception as e:
+            print(f"[WARN] Vectorized building density failed ({e}). Falling back to loop.")
             try:
-                buffer_geom = road.geometry.buffer(50)
-                possible_matches_index = list(buildings_sindex.intersection(buffer_geom.bounds))
-                possible_matches = buildings.iloc[possible_matches_index]
-                nearby_buildings = possible_matches[possible_matches.intersects(buffer_geom)]
-                building_counts.append(len(nearby_buildings))
+                buildings_sindex = buildings.sindex
+                building_counts = []
+                for idx, road in edges.iterrows():
+                    try:
+                        buffer_geom = road.geometry.buffer(50)
+                        possible_matches_index = list(buildings_sindex.intersection(buffer_geom.bounds))
+                        possible_matches = buildings.iloc[possible_matches_index]
+                        nearby_buildings = possible_matches[possible_matches.intersects(buffer_geom)]
+                        building_counts.append(len(nearby_buildings))
+                    except Exception:
+                        building_counts.append(0)
             except Exception:
-                building_counts.append(0)
-    else:
-        building_counts = [0] * len(edges)
+                building_counts = [0] * len(edges)
     edges["building_density"] = building_counts
 
-    # Compute vegetation score (50m buffer)
-    print("[FUSION] Computing vegetation score...")
-    veg_counts = []
+    # Compute vegetation score (50m buffer) using vectorized spatial join
+    print("[FUSION] Computing vegetation score (vectorized)...")
+    veg_counts = [0] * len(edges)
     if not vegetation.empty and "geometry" in vegetation.columns:
-        vegetation_sindex = vegetation.sindex
-        for idx, road in edges.iterrows():
+        try:
+            buffered_edges = gpd.GeoDataFrame(geometry=edges.geometry.buffer(50), crs=edges.crs).reset_index()
+            joined = gpd.sjoin(vegetation, buffered_edges, how="inner", predicate="intersects")
+            if not joined.empty:
+                counts = joined["index_right"].value_counts()
+                veg_counts = [int(counts.get(i, 0)) for i in range(len(edges))]
+        except Exception as e:
+            print(f"[WARN] Vectorized vegetation score failed ({e}). Falling back to loop.")
             try:
-                buffer_geom = road.geometry.buffer(50)
-                possible_matches_index = list(vegetation_sindex.intersection(buffer_geom.bounds))
-                possible_matches = vegetation.iloc[possible_matches_index]
-                veg = possible_matches[possible_matches.intersects(buffer_geom)]
-                veg_counts.append(len(veg))
+                vegetation_sindex = vegetation.sindex
+                veg_counts = []
+                for idx, road in edges.iterrows():
+                    try:
+                        buffer_geom = road.geometry.buffer(50)
+                        possible_matches_index = list(vegetation_sindex.intersection(buffer_geom.bounds))
+                        possible_matches = vegetation.iloc[possible_matches_index]
+                        veg = possible_matches[possible_matches.intersects(buffer_geom)]
+                        veg_counts.append(len(veg))
+                    except Exception:
+                        veg_counts.append(0)
             except Exception:
-                veg_counts.append(0)
-    else:
-        veg_counts = [0] * len(edges)
+                veg_counts = [0] * len(edges)
     edges["vegetation_score"] = veg_counts
 
     # Fetch weather and AQI
@@ -659,64 +702,64 @@ def download_and_fuse_bbox(olat: float, olon: float, dlat: float, dlon: float, c
     print(f"[FUSION] Dynamic fusion successful: saved files under {city_dir}")
 
 
-_graph_cache = {}
+GRAPH_CACHE = {}
+KDTREE_CACHE = {}
 
-def build_emission_graph(city: str = "kolkata",
-                          use_ml: bool = True,
-                          hour: int = 8,
-                          use_csv_emission: bool = True,
-                          vehicle_override: int = None) -> nx.MultiDiGraph:
-    """
-    Build a directed road graph where edge weight = emission_factor.
+def get_city_dir(city: str) -> Path:
+    """Get directory path for a city. Check cities/city first, then fallback to root/city."""
+    city_key = city.lower().strip()
+    cities_dir = BASE_DIR / "cities" / city_key
+    if cities_dir.exists():
+        return cities_dir
+    local_dir = BASE_DIR / city_key
+    if local_dir.exists():
+        return local_dir
+    return cities_dir
 
-    use_csv_emission=True  -> use the pre-computed carbon_cost column directly
-                               (fastest, no ML call needed for each edge)
-    use_csv_emission=False -> call ML model / physics formula per edge
-    vehicle_override       -> if set (from YOLO detection), use this count
-                               instead of CSV or random fallback for ALL edges
-    """
-    global _graph_cache
-    geojson_path = BASE_DIR / city / "fused_roads.geojson"
-    city_key = city.lower()
-
-    if city_key in _graph_cache and vehicle_override is None:
-        return _graph_cache[city_key]
-
-    if not geojson_path.exists():
-        print(f"[WARN] No graph file found at {geojson_path}. Returning empty graph.")
-        return nx.MultiDiGraph()
-
-    print(f"[INFO] Loading road network from: {geojson_path}")
-    gdf = gpd.read_file(str(geojson_path))
-    print(f"[INFO] {len(gdf):,} road segments loaded.")
-
-    G = nx.MultiDiGraph()
-
-    def safe_scalar(val, default=None):
-        """Return a scalar even if val is a list/array (GeoJSON multi-value columns)."""
-        if val is None:
+def safe_scalar(val, default=None):
+    """Return a scalar even if val is a list/array (GeoJSON multi-value columns)."""
+    if val is None:
+        return default
+    if hasattr(val, "__iter__") and not isinstance(val, str):
+        items = list(val)
+        return items[0] if items else default
+    try:
+        if pd.isna(val):
             return default
-        if hasattr(val, "__iter__") and not isinstance(val, str):
-            items = list(val)
-            return items[0] if items else default
-        try:
-            if pd.isna(val):
-                return default
-        except (TypeError, ValueError):
-            pass
-        return val
+    except (TypeError, ValueError):
+        pass
+    return val
 
+def rebuild_graph_from_geojson(geojson_path: Path, use_ml: bool, hour: int, use_csv_emission: bool) -> nx.MultiDiGraph:
+    """Load GeoJSON and reconstruct the NetworkX MultiDiGraph, populating node coordinates."""
+    print(f"[INFO] Parsing GeoJSON: {geojson_path}")
+    gdf = gpd.read_file(str(geojson_path))
+    print(f"[INFO] {len(gdf):,} road segments loaded. Extracting node coordinates...")
+    
+    # Project edge geometries to EPSG:4326 to get node lat/lon coordinates
+    gdf_gps = gdf.to_crs("EPSG:4326")
+    
+    G = nx.MultiDiGraph()
+    
     for idx, row in gdf.iterrows():
         u = row["u"]
         v = row["v"]
-
+        
+        # Extract GPS coordinates for nodes (start and end coordinates of LineString in EPSG:4326)
+        geom_gps = gdf_gps.at[idx, "geometry"]
+        if geom_gps and geom_gps.geom_type == "LineString":
+            coords_gps = list(geom_gps.coords)
+            if coords_gps:
+                G.add_node(u, lon=coords_gps[0][0], lat=coords_gps[0][1])
+                G.add_node(v, lon=coords_gps[-1][0], lat=coords_gps[-1][1])
+                
         hw  = get_highway_str(safe_scalar(row.get("highway"), "residential"))
         spd_raw = safe_scalar(row.get("avg_speed_kmph"), 30)
         spd = max(float(spd_raw) if spd_raw is not None else 30.0, 5.0)
         lng_raw = safe_scalar(row.get("length"), 50)
         lng = float(lng_raw) if lng_raw is not None else 50.0
-
-        # ── emission_factor ────────────────────────────────────────────────
+        
+        # emission_factor
         cc_raw = safe_scalar(row.get("carbon_cost"))
         if use_csv_emission and cc_raw is not None:
             try:
@@ -725,33 +768,19 @@ def build_emission_graph(city: str = "kolkata",
                 emission_factor = None
         else:
             emission_factor = None
-
+            
         if emission_factor is None or emission_factor <= 0:
-            if vehicle_override is not None:
-                # Use YOLO-detected vehicle count instead of random fallback
-                vinfo = fallback_vehicle_count(hw, hour)
-                vinfo["total"] = vehicle_override
-            else:
-                vinfo = fallback_vehicle_count(hw, hour)
+            vinfo = fallback_vehicle_count(hw, hour)
             emission_factor = predict_emission_factor(dict(row), vinfo)
-
-        # ── vehicle count for display ──────────────────────────────────────
+            
         vc_raw = safe_scalar(row.get("vehicle_count"), 60)
         vc = int(float(vc_raw)) if vc_raw is not None else 60
-
-        # If vehicle_override is set and we have a CSV emission, scale it
-        # by the ratio of detected vehicles to stored vehicle count
-        if vehicle_override is not None and emission_factor > 0:
-            stored_vc = int(float(vc_raw)) if vc_raw is not None else 60
-            if stored_vc > 0:
-                scale = vehicle_override / stored_vc
-                emission_factor *= max(0.3, min(scale, 3.0))  # clamp [0.3x, 3x]
-
+        
         bd_raw = safe_scalar(row.get("building_density"), 5)
         vs_raw = safe_scalar(row.get("vegetation_score"), 2)
         aq_raw = safe_scalar(row.get("AQI"), 100)
         ws_raw = safe_scalar(row.get("wind_speed_mps"), 1)
-
+        
         edge_data = {
             "length":           lng,
             "emission_factor":  emission_factor,
@@ -767,11 +796,96 @@ def build_emission_graph(city: str = "kolkata",
             "wind_speed_mps":   float(ws_raw) if ws_raw is not None else 1.0,
         }
         G.add_edge(u, v, **edge_data)
-
-    print(f"[INFO] Graph: {G.number_of_nodes():,} nodes, {G.number_of_edges():,} edges")
-    if vehicle_override is None:
-        _graph_cache[city_key] = G
+        
+    print(f"[INFO] Completed graph building. Nodes: {G.number_of_nodes():,}, Edges: {G.number_of_edges():,}")
     return G
+
+def get_or_build_kdtree(city_name: str, G: nx.MultiDiGraph):
+    """Get or build scipy.spatial.cKDTree for a city's graph nodes in lat/lon coordinates."""
+    global KDTREE_CACHE
+    city_key = city_name.lower().strip()
+    if city_key in KDTREE_CACHE:
+        return KDTREE_CACHE[city_key]
+        
+    node_coords = []
+    node_ids = []
+    for n, data in G.nodes(data=True):
+        lat = data.get("lat") or data.get("y")
+        lon = data.get("lon") or data.get("x")
+        if lat is not None and lon is not None:
+            node_coords.append((lat, lon))
+            node_ids.append(n)
+            
+    if node_coords:
+        kdtree = cKDTree(node_coords)
+        KDTREE_CACHE[city_key] = (kdtree, node_ids)
+        print(f"[INFO] Built KDTree for {city_name} with {len(node_ids):,} nodes.")
+        return kdtree, node_ids
+        
+    return None, None
+
+def build_emission_graph(city: str = "kolkata",
+                          use_ml: bool = True,
+                          hour: int = 8,
+                          use_csv_emission: bool = True,
+                          vehicle_override: int = None) -> nx.MultiDiGraph:
+    """
+    Build or retrieve a cached directed road graph where edge weight = emission_factor.
+    """
+    global GRAPH_CACHE
+    city_key = city.lower().strip()
+    
+    # Check if base graph exists in memory
+    if city_key in GRAPH_CACHE:
+        base_G = GRAPH_CACHE[city_key]
+    else:
+        # Load from disk (gpickle or geojson)
+        city_dir = get_city_dir(city_key)
+        gpickle_path = city_dir / "fused_roads.gpickle"
+        geojson_path = city_dir / "fused_roads.geojson"
+        
+        if gpickle_path.exists():
+            print(f"[INFO] Loading cached graph from binary: {gpickle_path}")
+            try:
+                with open(gpickle_path, "rb") as f:
+                    base_G = pickle.load(f)
+                print(f"[INFO] Loaded binary cache with {base_G.number_of_nodes():,} nodes.")
+            except Exception as e:
+                print(f"[WARN] Failed to load binary cache: {e}. Rebuilding from GeoJSON.")
+                base_G = None
+        else:
+            base_G = None
+            
+        if base_G is None:
+            if not geojson_path.exists():
+                print(f"[WARN] No network data found for city '{city}' at '{geojson_path}'.")
+                return nx.MultiDiGraph()
+                
+            base_G = rebuild_graph_from_geojson(geojson_path, use_ml, hour, use_csv_emission)
+            
+            # Save to binary gpickle cache
+            try:
+                city_dir.mkdir(parents=True, exist_ok=True)
+                with open(gpickle_path, "wb") as f:
+                    pickle.dump(base_G, f)
+                print(f"[INFO] Saved graph to binary cache: {gpickle_path}")
+            except Exception as e:
+                print(f"[WARN] Failed to save binary cache: {e}")
+                
+        GRAPH_CACHE[city_key] = base_G
+        
+    # Apply vehicle override (YOLO overrides) in-memory if set
+    if vehicle_override is not None:
+        G = base_G.copy()
+        for u, v, data in G.edges(data=True):
+            stored_vc = data.get("vehicle_count", 60)
+            if stored_vc > 0:
+                scale = vehicle_override / stored_vc
+                data["emission_factor"] *= max(0.3, min(scale, 3.0))
+                data["vehicle_count"] = vehicle_override
+        return G
+        
+    return base_G
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1046,29 +1160,32 @@ def get_route_segments(G, route: list, top_n: int = 30) -> list:
 # 5.  NEAREST NODE FINDER
 # ─────────────────────────────────────────────────────────────────────────────
 def nearest_node(G, city: str, lat: float, lon: float) -> int:
-    """Find graph node closest to (lat, lon) using Euclidean approx."""
-    geojson_path = BASE_DIR / city / "fused_roads.geojson"
-    if not geojson_path.exists():
-        if G.number_of_nodes() == 0:
-            return None
-        # fallback to first node
-        return list(G.nodes)[0]
-
-    gdf = gpd.read_file(str(geojson_path)).to_crs("EPSG:4326")
-    nodes_u = gdf[["u", "geometry"]].copy()
-    nodes_u["cx"] = nodes_u.geometry.apply(
-        lambda g: g.coords[0][0] if g.geom_type == "Point" else g.centroid.x)
-    nodes_u["cy"] = nodes_u.geometry.apply(
-        lambda g: g.coords[0][1] if g.geom_type == "Point" else g.centroid.y)
-
+    """Find graph node closest to (lat, lon) using cached scipy.spatial.cKDTree."""
+    city_key = city.lower().strip()
+    kdtree, node_ids = get_or_build_kdtree(city_key, G)
+    if kdtree is not None:
+        dist, idx = kdtree.query((lat, lon))
+        return int(node_ids[idx])
+        
+    # Fallback to linear scan of nodes in G if KDTree not built
     best_node = None
     best_dist = float("inf")
-    for _, r in nodes_u.drop_duplicates("u").iterrows():
-        d = (r["cx"] - lon) ** 2 + (r["cy"] - lat) ** 2
-        if d < best_dist:
-            best_dist = d
-            best_node = r["u"]
-    return int(best_node)
+    for n, data in G.nodes(data=True):
+        n_lat = data.get("lat") or data.get("y")
+        n_lon = data.get("lon") or data.get("x")
+        if n_lat is not None and n_lon is not None:
+            d = (n_lat - lat) ** 2 + (n_lon - lon) ** 2
+            if d < best_dist:
+                best_dist = d
+                best_node = n
+                
+    if best_node is not None:
+        return int(best_node)
+        
+    # Final fallback: return first node
+    if G.number_of_nodes() == 0:
+        return None
+    return list(G.nodes)[0]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1245,6 +1362,31 @@ def plot_route_comparison(G, routes: dict, strategies: dict,
     print(f"[INFO] Route comparison saved -> {save_path}")
     return save_path
 
+def find_matching_cached_dynamic_city(olat: float, olon: float, dlat: float, dlon: float) -> Optional[str]:
+    """Find a cached dynamic city name whose bounding box covers the requested points."""
+    cities_dir = BASE_DIR / "cities"
+    if not cities_dir.exists():
+        return None
+    for folder in cities_dir.iterdir():
+        if folder.is_dir() and folder.name.startswith("custom_"):
+            parts = folder.name.split("_")
+            if len(parts) == 5:
+                try:
+                    lat_min = float(parts[1])
+                    lon_min = float(parts[2])
+                    lat_max = float(parts[3])
+                    lon_max = float(parts[4])
+                    # Check if requested points are inside the cached bbox with a buffer margin
+                    margin = 0.002
+                    if (lat_min + margin <= olat <= lat_max - margin and
+                        lon_min + margin <= olon <= lon_max - margin and
+                        lat_min + margin <= dlat <= lat_max - margin and
+                        lon_min + margin <= dlon <= lon_max - margin):
+                        return folder.name
+                except ValueError:
+                    continue
+    return None
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 7.  MAIN PUBLIC API
@@ -1274,16 +1416,69 @@ def run_eco_routing(origin_lat: float, origin_lon: float,
     if plot_path is None:
         plot_path = f"route_compare_{city}.png"
 
-    city_key = city.lower()
-    if city_key == "custom_route":
-        global _graph_cache
-        _graph_cache.pop("custom_route", None)
-        try:
-            download_and_fuse_bbox(origin_lat, origin_lon, dest_lat, dest_lon, city_name="custom_route")
-        except Exception as e:
-            return {"error": f"Failed to download and process OSM data: {str(e)}"}
+    city_key = city.lower().strip()
+    
+    # Boundary check for offline maps to prevent auto-switching or snapping way out of bounds
+    if city_key != "custom_route" and not city_key.startswith("custom_"):
+        # Load the graph to do snaps and check distances
+        G = build_emission_graph(city=city, use_ml=use_ml, vehicle_override=vehicle_override)
+        if G.number_of_nodes() == 0:
+            return {"error": f"No network data found for city: {city}. Upload data first."}
+            
+        origin_node = nearest_node(G, city, origin_lat, origin_lon)
+        dest_node   = nearest_node(G, city, dest_lat, dest_lon)
+        
+        if origin_node is None or dest_node is None:
+            return {"error": "Coordinates snap query failed. No nodes found in the map graph."}
+            
+        # Verify snap distances
+        origin_data = G.nodes[origin_node]
+        dest_data = G.nodes[dest_node]
+        olat_snap = origin_data.get("lat") or origin_data.get("y")
+        olon_snap = origin_data.get("lon") or origin_data.get("x")
+        dlat_snap = dest_data.get("lat") or dest_data.get("y")
+        dlon_snap = dest_data.get("lon") or dest_data.get("x")
+        
+        if olat_snap is not None and olon_snap is not None and dlat_snap is not None and dlon_snap is not None:
+            dist_origin = math.sqrt((olat_snap - origin_lat)**2 + (olon_snap - origin_lon)**2)
+            dist_dest = math.sqrt((dlat_snap - dest_lat)**2 + (dlon_snap - dest_lon)**2)
+            # 0.035 degrees is approx 3.8 km. If either is larger, it's outside the offline map region
+            if dist_origin > 0.035 or dist_dest > 0.035:
+                return {"error": f"This location is outside the {city.title()} offline map. Please select Dynamic India."}
+    else:
+        # Dynamic India routing
+        # Check if coordinates span too far (cross-country routing block)
+        lat_min, lat_max = min(origin_lat, dest_lat), max(origin_lat, dest_lat)
+        lon_min, lon_max = min(origin_lon, dest_lon), max(origin_lon, dest_lon)
+        if (lat_max - lat_min) > 0.35 or (lon_max - lon_min) > 0.35:
+            return {"error": f"The distance between coordinates is too large for local dynamic routing (bounding box spans "
+                             f"{(lat_max - lat_min):.2f}° x {(lon_max - lon_min):.2f}°). Max allowed is 0.35° (approx 38 km). "
+                             f"Please select coordinates within the same city."}
+                             
+        # Find if we already have a cached bbox graph covering these points
+        matched_city = find_matching_cached_dynamic_city(origin_lat, origin_lon, dest_lat, dest_lon)
+        if matched_city:
+            print(f"[INFO] Found matching cached dynamic city: {matched_city}")
+            city = matched_city
+            city_key = matched_city
+            G = build_emission_graph(city=city, use_ml=use_ml, vehicle_override=vehicle_override)
+        else:
+            # We must download and fuse a new bbox
+            buffer = 0.015
+            lat_min_buf = lat_min - buffer
+            lat_max_buf = lat_max + buffer
+            lon_min_buf = lon_min - buffer
+            lon_max_buf = lon_max + buffer
+            new_city_name = f"custom_{lat_min_buf:.4f}_{lon_min_buf:.4f}_{lat_max_buf:.4f}_{lon_max_buf:.4f}"
+            print(f"[INFO] No cached dynamic city found. Downloading new bounding box under: {new_city_name}")
+            try:
+                download_and_fuse_bbox(origin_lat, origin_lon, dest_lat, dest_lon, city_name=new_city_name)
+                city = new_city_name
+                city_key = new_city_name
+                G = build_emission_graph(city=city, use_ml=use_ml, vehicle_override=vehicle_override)
+            except Exception as e:
+                return {"error": f"Failed to download and process OSM data: {str(e)}"}
 
-    G = build_emission_graph(city=city, use_ml=use_ml, vehicle_override=vehicle_override)
     if G.number_of_nodes() == 0:
         return {"error": f"No network data found for city: {city}. Upload data first."}
 
