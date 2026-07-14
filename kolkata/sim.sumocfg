@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+  <input>
+    <net-file value="network.net.xml"/>
+    <route-files value="traffic.rou.xml"/>
+  </input>
+  <time>
+    <begin value="0"/>
+    <end value="300"/>
+    <step-length value="0.5"/>
+  </time>
+  <output>
+    <emission-output value="emissions.xml"/>
+    <tripinfo-output value="tripinfo.xml"/>
+    <summary-output value="summary.xml"/>
+  </output>
+  <processing>
+    <collision.action value="warn"/>
+    <time-to-teleport value="600"/>
+  </processing>
+  <gui_only>
+    <gui-settings-file value="gui_settings.xml"/>
+  </gui_only>
+  <report>
+    <verbose value="false"/>
+    <no-step-log value="true"/>
+  </report>
+</configuration>

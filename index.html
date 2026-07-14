@@ -8,7 +8,7 @@
   <meta name="description"
     content="Find the lowest-emission route through Kolkata using AI-powered carbon cost prediction, YOLO vehicle detection, and SUMO simulation." />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@300;400;500;600;700;800;900&display=swap"
     rel="stylesheet" />
   <style>
     *,
@@ -20,26 +20,51 @@
     }
 
     :root {
-      --bg: #0F172A;
-      --surface: #1E293B;
-      --surface2: #243048;
-      --border: #334155;
-      --text: #F1F5F9;
+      --bg: #070B19;
+      --glass-bg: rgba(15, 23, 42, 0.65);
+      --glass-bg-hover: rgba(15, 23, 42, 0.8);
+      --glass-card-bg: rgba(255, 255, 255, 0.03);
+      --glass-card-hover: rgba(255, 255, 255, 0.05);
+      --glass-border: rgba(255, 255, 255, 0.08);
+      --glass-border-hover: rgba(255, 255, 255, 0.15);
+      --glass-border-focus: rgba(59, 130, 246, 0.5);
+      --text: #F8FAFC;
       --muted: #94A3B8;
+      
+      /* Backwards compatible fallback definitions */
+      --border: rgba(255, 255, 255, 0.08);
+      --surface2: rgba(30, 41, 59, 0.45);
+      
+      /* Vibrant gradients & solid colors */
+      --primary-gradient: linear-gradient(135deg, #3B82F6, #1D4ED8);
+      --primary-gradient-hover: linear-gradient(135deg, #60A5FA, #2563EB);
+      --accent-gradient: linear-gradient(135deg, #10B981, #059669);
+      --purple-gradient: linear-gradient(135deg, #8B5CF6, #7C3AED);
+      --amber-gradient: linear-gradient(135deg, #F59E0B, #D97706);
+      
       --accent: #10B981;
       --blue: #3B82F6;
       --amber: #F59E0B;
       --purple: #8B5CF6;
-      --red: #F43F5E;
-      --cyan: #22D3EE;
-      --radius: 12px;
-      --shadow: 0 4px 24px rgba(0, 0, 0, .45);
+      --red: #EF4444;
+      --cyan: #06B6D4;
+      
+      --radius: 16px;
+      --radius-sm: 8px;
+      --radius-lg: 24px;
+      
+      --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.15);
+      --shadow-md: 0 8px 32px rgba(0, 0, 0, 0.3);
+      --shadow-lg: 0 20px 50px -12px rgba(0, 0, 0, 0.5);
+      
+      --glow-blue: 0 0 15px rgba(59, 130, 246, 0.25);
+      --glow-green: 0 0 15px rgba(16, 185, 129, 0.25);
     }
 
     html,
     body {
       height: 100%;
-      font-family: 'Inter', sans-serif;
+      font-family: 'Outfit', 'Inter', sans-serif;
       background: var(--bg);
       color: var(--text);
     }
@@ -50,49 +75,131 @@
       overflow: hidden;
     }
 
+    /* Redesigned sidebar */
     .sidebar {
-      width: 420px;
-      min-width: 360px;
+      width: 400px;
+      max-width: 90vw;
       height: 100%;
-      background: var(--surface);
-      border-right: 1px solid var(--border);
+      background: var(--glass-bg);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-right: 1px solid var(--glass-border);
       display: flex;
       flex-direction: column;
       overflow-y: auto;
-      z-index: 10;
+      position: fixed;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      transform: translateX(-100%);
+      transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      z-index: 9999;
+    }
+
+    .sidebar.open {
+      transform: translateX(0);
+      box-shadow: 10px 0 50px rgba(0, 0, 0, 0.6);
+    }
+
+    .btn-close-sidebar {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--glass-border);
+      color: var(--muted);
+      font-size: 0.9rem;
+      cursor: pointer;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.25s ease;
+    }
+
+    .btn-close-sidebar:hover {
+      background: rgba(239, 68, 68, 0.15);
+      border-color: rgba(239, 68, 68, 0.4);
+      color: var(--red);
+      transform: scale(1.1);
+    }
+
+    .step-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 8px;
+    }
+
+    .step-item {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      font-size: 0.8rem;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .step-number {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: rgba(59, 130, 246, 0.12);
+      color: var(--blue);
+      font-weight: 700;
+      font-size: 0.75rem;
+      flex-shrink: 0;
+      border: 1px solid rgba(59, 130, 246, 0.25);
     }
 
     .sidebar-header {
-      padding: 22px 20px 16px;
-      background: linear-gradient(135deg, #0F3D2A 0%, #0F172A 100%);
-      border-bottom: 1px solid var(--border);
+      padding: 24px 20px 18px;
+      background: linear-gradient(180deg, rgba(30, 41, 59, 0.4) 0%, rgba(30, 41, 59, 0) 100%);
+      border-bottom: 1px solid var(--glass-border);
       flex-shrink: 0;
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
     }
 
     .sidebar-header h1 {
-      font-size: 1.25rem;
-      font-weight: 800;
+      font-size: 1.4rem;
+      font-weight: 900;
       letter-spacing: -.02em;
-      background: linear-gradient(135deg, #10B981, #22D3EE);
+      background: linear-gradient(135deg, #60A5FA, #3B82F6, #10B981);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
     }
 
     .sidebar-header p {
-      font-size: .78rem;
+      font-size: .8rem;
       color: var(--muted);
       margin-top: 4px;
     }
 
     .section {
-      padding: 16px 18px;
-      border-bottom: 1px solid var(--border);
+      margin: 12px 16px;
+      padding: 16px;
+      background: var(--glass-card-bg);
+      border: 1px solid var(--glass-border);
+      border-radius: 12px;
+      transition: all 0.3s ease;
+    }
+
+    .section:hover {
+      background: var(--glass-card-hover);
+      border-color: var(--glass-border-hover);
+      box-shadow: var(--shadow-sm);
     }
 
     .section-title {
-      font-size: .72rem;
-      font-weight: 700;
-      letter-spacing: .08em;
+      font-size: .78rem;
+      font-weight: 800;
+      letter-spacing: .06em;
       text-transform: uppercase;
       color: var(--muted);
       margin-bottom: 12px;
@@ -111,12 +218,63 @@
       color: var(--cyan);
     }
 
-    /* ── Inputs ──────────────────────────────────────────────────────────── */
+    /* ── Inputs & Selects Redesign ── */
+    input[type="number"],
+    input[type="text"],
+    select {
+      background: rgba(15, 23, 42, 0.45);
+      border: 1px solid var(--glass-border);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: .85rem;
+      padding: 10px 12px;
+      width: 100%;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    input[type="number"]:focus,
+    input[type="text"]:focus,
+    select:focus {
+      outline: none;
+      border-color: var(--blue);
+      background: rgba(15, 23, 42, 0.75);
+      box-shadow: var(--glow-blue);
+    }
+
+    /* Range slider custom track and thumb styles */
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      background: rgba(15, 23, 42, 0.5);
+      height: 6px;
+      border-radius: 99px;
+      outline: none;
+      border: 1px solid var(--glass-border);
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--blue);
+      cursor: pointer;
+      box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+      transition: transform 0.15s, background-color 0.15s;
+    }
+
+    input[type="range"]::-webkit-slider-thumb:hover {
+      transform: scale(1.2);
+      background: #60A5FA;
+    }
+
     .coord-group {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 8px;
-      margin-bottom: 10px;
+      margin-bottom: 12px;
     }
 
     .coord-group label {
@@ -124,42 +282,27 @@
       font-size: .78rem;
       color: var(--muted);
       font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 4px;
     }
 
     .marker-dot {
       display: inline-block;
-      width: 8px;
-      height: 8px;
+      width: 10px;
+      height: 10px;
       border-radius: 50%;
-      margin-right: 6px;
+      box-shadow: 0 0 8px currentColor;
     }
 
     .dot-origin {
-      background: var(--cyan);
+      background: var(--blue);
+      color: var(--blue);
     }
 
     .dot-dest {
-      background: var(--red);
-    }
-
-    input[type="number"],
-    input[type="range"],
-    select {
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      color: var(--text);
-      font-family: inherit;
-      font-size: .82rem;
-      padding: 8px 10px;
-      width: 100%;
-      transition: border-color .2s;
-    }
-
-    input[type="number"]:focus,
-    select:focus {
-      outline: none;
-      border-color: var(--accent);
+      background: var(--amber);
+      color: var(--amber);
     }
 
     .hint-row {
@@ -171,73 +314,87 @@
 
     .hint-btn {
       flex: 1;
-      padding: 6px 8px;
-      border-radius: 7px;
+      padding: 8px 12px;
+      border-radius: 8px;
       cursor: pointer;
-      font-size: .75rem;
+      font-size: .78rem;
       font-weight: 600;
-      border: 1px solid var(--border);
-      background: var(--surface2);
+      border: 1px solid var(--glass-border);
+      background: rgba(255, 255, 255, 0.04);
       color: var(--muted);
-      transition: all .18s;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
     }
 
     .hint-btn:hover {
-      border-color: var(--accent);
-      color: var(--accent);
+      background: rgba(59, 130, 246, 0.1);
+      border-color: rgba(59, 130, 246, 0.4);
+      color: var(--blue);
+      transform: translateY(-1px);
     }
 
     .hint-btn.active {
-      background: rgba(16, 185, 129, .15);
-      border-color: var(--accent);
-      color: var(--accent);
+      background: rgba(59, 130, 246, 0.2);
+      border-color: var(--blue);
+      color: var(--text);
+      box-shadow: var(--glow-blue);
     }
 
     .hour-row {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 12px;
     }
 
     .hour-row input[type="range"] {
       flex: 1;
-      padding: 0;
-      accent-color: var(--accent);
+      accent-color: var(--blue);
     }
 
     .hour-badge {
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 4px 10px;
-      font-size: .82rem;
+      background: rgba(15, 23, 42, 0.65);
+      border: 1px solid var(--glass-border);
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-size: .85rem;
       font-weight: 700;
-      min-width: 48px;
+      min-width: 60px;
       text-align: center;
-      color: var(--accent);
+      color: var(--blue);
+      box-shadow: var(--shadow-sm);
     }
 
+    /* Primary and secondary button refinements */
     .btn-route {
       width: 100%;
-      padding: 13px;
+      padding: 12px 18px;
       border: none;
       border-radius: 10px;
       cursor: pointer;
-      font-size: 1rem;
+      font-size: 0.95rem;
       font-weight: 700;
-      background: linear-gradient(135deg, #10B981, #059669);
+      background: var(--primary-gradient);
       color: white;
-      transition: all .2s;
-      box-shadow: 0 4px 14px rgba(16, 185, 129, .35);
+      transition: all 0.25s ease;
+      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
     }
 
     .btn-route:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 6px 20px rgba(16, 185, 129, .5);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 18px rgba(59, 130, 246, 0.5);
+      background: var(--primary-gradient-hover);
     }
 
     .btn-route:active {
       transform: translateY(0);
+      box-shadow: 0 2px 6px rgba(59, 130, 246, 0.4);
     }
 
     .btn-route:disabled {
@@ -249,21 +406,22 @@
 
     .btn-defaults {
       width: 100%;
-      padding: 9px;
-      border: 1px solid var(--border);
+      padding: 10px;
+      border: 1px solid var(--glass-border);
       border-radius: 10px;
       cursor: pointer;
       font-size: .82rem;
       font-weight: 600;
-      background: transparent;
+      background: rgba(255, 255, 255, 0.02);
       color: var(--muted);
-      transition: all .2s;
+      transition: all 0.2s;
       margin-top: 8px;
     }
 
     .btn-defaults:hover {
-      border-color: var(--cyan);
-      color: var(--cyan);
+      border-color: rgba(59, 130, 246, 0.4);
+      color: var(--blue);
+      background: rgba(59, 130, 246, 0.05);
     }
 
     /* ── Status ──────────────────────────────────────────────────────────── */
@@ -769,6 +927,45 @@
       height: 100%;
     }
 
+    /* Custom Leaflet Zoom Control Position and Style */
+    .leaflet-top.leaflet-left {
+      top: 300px !important;
+      left: 20px !important;
+      transition: all 0.3s ease;
+    }
+
+    .leaflet-bar {
+      border: 1px solid var(--glass-border) !important;
+      background: var(--glass-bg) !important;
+      box-shadow: var(--shadow-md) !important;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-radius: 8px !important;
+      overflow: hidden;
+    }
+
+    .leaflet-bar a {
+      background-color: rgba(15, 23, 42, 0.45) !important;
+      color: var(--text) !important;
+      border-bottom: 1px solid var(--glass-border) !important;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+      font-weight: 600;
+      width: 32px !important;
+      height: 32px !important;
+      line-height: 32px !important;
+    }
+
+    .leaflet-bar a:hover {
+      background-color: rgba(59, 130, 246, 0.15) !important;
+      color: var(--blue) !important;
+    }
+
+    .leaflet-bar a.leaflet-disabled {
+      background-color: rgba(15, 23, 42, 0.2) !important;
+      color: var(--muted) !important;
+      opacity: 0.5;
+    }
+
     .map-overlay {
       position: absolute;
       top: 14px;
@@ -1019,7 +1216,6 @@
       border-radius: 99px;
     }
 
-    /* ── Floating Google Maps UI Redesign ────────────────────────────────── */
     #floating-search-card {
       position: absolute;
       top: 20px;
@@ -1027,17 +1223,23 @@
       z-index: 1000;
       width: 390px;
       max-width: 90vw;
-      background: rgba(15, 23, 42, 0.85);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      border: 1px solid rgba(51, 65, 85, 0.7);
-      border-radius: 16px;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-      padding: 16px;
+      background: var(--glass-bg);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--glass-border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-lg);
+      padding: 20px;
       display: flex;
       flex-direction: column;
-      gap: 12px;
-      transition: all 0.3s ease;
+      gap: 14px;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    #floating-search-card:hover {
+      background: var(--glass-bg-hover);
+      border-color: rgba(255, 255, 255, 0.15);
+      box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.6);
     }
 
     .search-input-wrapper {
@@ -1050,17 +1252,29 @@
     .search-input-container {
       display: flex;
       align-items: center;
-      background: var(--surface2);
-      border: 1px solid var(--border);
+      background: rgba(15, 23, 42, 0.4);
+      border: 1px solid var(--glass-border);
       border-radius: 10px;
-      padding: 2px 10px;
+      padding: 4px 12px;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .search-input-container:hover {
+      border-color: rgba(255, 255, 255, 0.15);
+      background: rgba(15, 23, 42, 0.55);
+    }
+
+    .search-input-container:focus-within {
+      border-color: var(--blue);
+      background: rgba(15, 23, 42, 0.7);
+      box-shadow: var(--glow-blue);
     }
 
     .search-input-container input {
       border: none !important;
       background: transparent !important;
       flex: 1;
-      font-size: 0.85rem;
+      font-size: 0.88rem;
       padding: 8px 4px;
       color: var(--text);
     }
@@ -1075,22 +1289,23 @@
       left: 0;
       right: 0;
       z-index: 1010;
-      background: rgba(30, 41, 59, 0.95);
-      backdrop-filter: blur(8px);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      margin-top: 4px;
-      max-height: 200px;
+      background: rgba(15, 23, 42, 0.95);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--glass-border);
+      border-radius: 10px;
+      margin-top: 6px;
+      max-height: 220px;
       overflow-y: auto;
-      box-shadow: var(--shadow);
+      box-shadow: var(--shadow-lg);
       display: none;
     }
 
     .vehicle-tabs-row {
       display: flex;
-      gap: 4px;
+      gap: 6px;
       overflow-x: auto;
-      padding-bottom: 4px;
+      padding-bottom: 6px;
       scrollbar-width: none;
     }
 
@@ -1100,67 +1315,43 @@
 
     .vehicle-tab-btn {
       flex: 0 0 auto;
-      padding: 6px 12px;
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 20px;
+      padding: 8px 14px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--glass-border);
+      border-radius: 24px;
       color: var(--muted);
       cursor: pointer;
-      font-size: 0.78rem;
+      font-size: 0.8rem;
       font-weight: 600;
       display: flex;
       align-items: center;
       gap: 6px;
-      transition: all 0.2s;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
     .vehicle-tab-btn:hover {
-      border-color: var(--cyan);
-      color: var(--cyan);
+      border-color: rgba(59, 130, 246, 0.4);
+      color: #fff;
+      background: rgba(59, 130, 246, 0.08);
+      transform: translateY(-1px);
     }
 
     .vehicle-tab-btn.active {
-      background: rgba(34, 211, 238, 0.15);
-      border-color: var(--cyan);
-      color: var(--cyan);
+      background: rgba(59, 130, 246, 0.2);
+      border-color: var(--blue);
+      color: #fff;
+      box-shadow: var(--glow-blue);
     }
 
-    #theme-toggle {
-      position: absolute;
-      top: 20px;
-      right: 74px;
-      /* sits cleanly next to the gear button */
-      z-index: 1000;
-      background: rgba(30, 41, 59, 0.85);
-      backdrop-filter: blur(8px);
-      border: 1px solid var(--border);
-      border-radius: 50%;
-      width: 44px;
-      height: 44px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      color: var(--text);
-      font-size: 1.25rem;
-      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
-      transition: all 0.2s;
-    }
-
-    #theme-toggle:hover {
-      border-color: var(--cyan);
-      color: var(--cyan);
-      transform: scale(1.05);
-    }
-
+    #theme-toggle,
     #sidebar-toggle {
       position: absolute;
       top: 20px;
-      right: 20px;
       z-index: 1000;
-      background: rgba(30, 41, 59, 0.85);
-      backdrop-filter: blur(8px);
-      border: 1px solid var(--border);
+      background: var(--glass-bg);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--glass-border);
       border-radius: 50%;
       width: 44px;
       height: 44px;
@@ -1170,14 +1361,25 @@
       cursor: pointer;
       color: var(--text);
       font-size: 1.25rem;
-      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
-      transition: all 0.2s;
+      box-shadow: var(--shadow-md);
+      transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     }
 
+    #theme-toggle {
+      right: 74px;
+    }
+
+    #sidebar-toggle {
+      right: 20px;
+    }
+
+    #theme-toggle:hover,
     #sidebar-toggle:hover {
-      border-color: var(--cyan);
-      color: var(--cyan);
-      transform: scale(1.05);
+      background: var(--glass-bg-hover);
+      border-color: var(--blue);
+      color: var(--blue);
+      transform: scale(1.1) rotate(15deg);
+      box-shadow: var(--glow-blue), var(--shadow-lg);
     }
 
     #floating-route-summary {
@@ -1187,21 +1389,26 @@
       z-index: 1000;
       width: 390px;
       max-width: 90vw;
-      background: rgba(15, 23, 42, 0.9);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      border: 1px solid rgba(16, 185, 129, 0.6);
-      border-radius: 16px;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-      padding: 14px 16px;
+      background: var(--glass-bg);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-lg);
+      padding: 16px 20px;
       display: none;
       flex-direction: column;
-      gap: 10px;
-      transition: all 0.3s ease;
+      gap: 12px;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    #floating-route-summary:hover {
+      background: var(--glass-bg-hover);
+      border-color: rgba(16, 185, 129, 0.6);
     }
 
     .summary-savings-title {
-      font-size: 0.95rem;
+      font-size: 0.98rem;
       font-weight: 800;
       color: var(--accent);
       display: flex;
@@ -1212,7 +1419,7 @@
     .summary-route-tabs {
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: 8px;
       margin-top: 4px;
     }
 
@@ -1220,26 +1427,27 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 8px 12px;
-      background: rgba(30, 41, 59, 0.6);
-      border: 1px solid var(--border);
-      border-radius: 8px;
+      padding: 10px 14px;
+      background: rgba(15, 23, 42, 0.4);
+      border: 1px solid var(--glass-border);
+      border-radius: 10px;
       cursor: pointer;
-      transition: all 0.2s;
+      transition: all 0.2s ease;
     }
 
     .summary-route-tab-item:hover {
-      border-color: var(--cyan);
-      background: rgba(30, 41, 59, 0.8);
+      border-color: rgba(59, 130, 246, 0.4);
+      background: rgba(15, 23, 42, 0.6);
     }
 
     .summary-route-tab-item.active {
-      border-color: var(--cyan);
-      background: rgba(34, 211, 238, 0.12);
+      border-color: var(--blue);
+      background: rgba(59, 130, 246, 0.15);
+      box-shadow: var(--glow-blue);
     }
 
     .summary-route-tab-title {
-      font-size: 0.78rem;
+      font-size: 0.8rem;
       font-weight: 700;
       display: flex;
       align-items: center;
@@ -1247,31 +1455,9 @@
     }
 
     .summary-route-tab-meta {
-      font-size: 0.72rem;
+      font-size: 0.75rem;
       color: var(--muted);
       font-weight: 600;
-    }
-
-    .sidebar {
-      width: 400px;
-      height: 100%;
-      background: var(--surface);
-      border-right: 1px solid var(--border);
-      display: flex;
-      flex-direction: column;
-      overflow-y: auto;
-      position: fixed;
-      top: 0;
-      left: 0;
-      bottom: 0;
-      transform: translateX(-100%);
-      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-      z-index: 9999;
-    }
-
-    .sidebar.open {
-      transform: translateX(0);
-      box-shadow: 5px 0 30px rgba(0, 0, 0, 0.5);
     }
 
     .gps-marker-container {
@@ -1319,6 +1505,81 @@
         opacity: 0;
       }
     }
+
+    /* ── Beautiful Custom Marker Pins ── */
+    .custom-map-pin {
+      background: transparent !important;
+      border: none !important;
+    }
+
+    .pin-wrapper {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: 34px;
+      height: 56px;
+    }
+
+    .pin-pulse {
+      position: absolute;
+      width: 18px;
+      height: 7px;
+      border-radius: 50%;
+      bottom: 10px;
+      left: 8px;
+      animation: pin-glow-anim 1.8s infinite ease-out;
+      opacity: 0.6;
+      z-index: -1;
+    }
+
+    .pin-svg {
+      filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.5));
+      transition: transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      z-index: 2;
+    }
+
+    .pin-wrapper:hover .pin-svg {
+      transform: scale(1.15) translateY(-3px);
+    }
+
+    .pin-label-card {
+      position: absolute;
+      top: -32px;
+      background: #1E293B;
+      color: #F8FAFC;
+      font-size: 0.68rem;
+      font-weight: 800;
+      padding: 3px 8px;
+      border-radius: 6px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0.95;
+      z-index: 5;
+      transform: translateY(0);
+      transition: all 0.2s ease;
+    }
+
+    .pin-wrapper:hover .pin-label-card {
+      transform: translateY(-2px);
+      background: #0F172A;
+      opacity: 1;
+    }
+
+    @keyframes pin-glow-anim {
+      0% {
+        transform: scale(0.4);
+        opacity: 0.8;
+      }
+      100% {
+        transform: scale(2.0);
+        opacity: 0;
+      }
+    }
   </style>
 </head>
 
@@ -1331,19 +1592,29 @@
           <h1>Eco-Routing</h1>
           <p>Navigation Settings &amp; Dashboard</p>
         </div>
-        <button onclick="toggleSidebar(false)"
-          style="background:transparent; border:none; color:var(--muted); font-size:1.4rem; cursor:pointer; padding:5px; transition:color 0.2s;"
-          onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--muted)'">✕</button>
+        <button onclick="toggleSidebar(false)" class="btn-close-sidebar">✕</button>
       </div>
 
       <!-- Workflow Info -->
       <div class="section">
-        <div class="section-title">Multi-Route YOLO Workflow</div>
-        <div style="font-size:0.8rem; color:var(--muted);">
-          1. Set Origin &amp; Destination.<br />
-          2. Click <b>Find Base Routes</b>.<br />
-          3. Upload images per <b>route</b> or per <b>road segment</b>.<br />
-          4. Click <b>Apply &amp; Re-Route</b> to see the updated best path.
+        <div class="section-title">🗺️ Multi-Route YOLO Workflow</div>
+        <div class="step-list">
+          <div class="step-item">
+            <span class="step-number">1</span>
+            <span>Set <b>Origin</b> &amp; <b>Destination</b> on the map or search card.</span>
+          </div>
+          <div class="step-item">
+            <span class="step-number">2</span>
+            <span>Click <b>Find Base Routes</b> to calculate options.</span>
+          </div>
+          <div class="step-item">
+            <span class="step-number">3</span>
+            <span>Upload traffic photos per <b>route</b> or <b>road segment</b>.</span>
+          </div>
+          <div class="step-item">
+            <span class="step-number">4</span>
+            <span>Click <b>Apply &amp; Re-Route</b> to compute the greenest path.</span>
+          </div>
         </div>
       </div>
 
@@ -1371,32 +1642,18 @@
       <div class="section">
         <div class="section-title">Route Points</div>
         <div class="hint-row" style="margin-bottom:10px;">
-          <button class="hint-btn" id="btn-set-origin" onclick="setPickMode('origin')">Click map: Origin</button>
-          <button class="hint-btn" id="btn-set-dest" onclick="setPickMode('dest')">Click map: Destination</button>
+          <button class="hint-btn" id="btn-set-origin" onclick="setPickMode('origin')">Click map: Start Point</button>
+          <button class="hint-btn" id="btn-set-dest" onclick="setPickMode('dest')">Click map: End Point</button>
         </div>
         <div class="coord-group">
-          <label><span class="marker-dot dot-origin"></span>Origin</label>
-          <input type="number" id="origin-lat" step="0.0001" placeholder="Latitude" value="22.5680" />
-          <input type="number" id="origin-lon" step="0.0001" placeholder="Longitude" value="88.3512" />
+          <label><span class="marker-dot dot-origin"></span>Start (S)</label>
+          <input type="number" id="origin-lat" step="0.0001" placeholder="Latitude" />
+          <input type="number" id="origin-lon" step="0.0001" placeholder="Longitude" />
         </div>
         <div class="coord-group">
-          <label><span class="marker-dot dot-dest"></span>Destination</label>
-          <input type="number" id="dest-lat" step="0.0001" placeholder="Latitude" value="22.5756" />
-          <input type="number" id="dest-lon" step="0.0001" placeholder="Longitude" value="88.3697" />
-        </div>
-        <button class="btn-defaults" onclick="loadDefaults()">Use Demo Points (Esplanade &rarr; Sealdah)</button>
-      </div>
-
-      <!-- Hour -->
-      <div class="section">
-        <div class="section-title">Time of Day</div>
-        <div class="hour-row">
-          <input type="range" id="hour-slider" min="0" max="23" value="8"
-            oninput="document.getElementById('hour-badge').textContent = formatHour(this.value)" />
-          <div class="hour-badge" id="hour-badge">08:00</div>
-        </div>
-        <div style="font-size:.72rem;color:var(--muted);margin-top:5px;">
-          Affects vehicle density (rush hours = more emissions)
+          <label><span class="marker-dot dot-dest"></span>End (E)</label>
+          <input type="number" id="dest-lat" step="0.0001" placeholder="Latitude" />
+          <input type="number" id="dest-lon" step="0.0001" placeholder="Longitude" />
         </div>
       </div>
 
@@ -1436,51 +1693,71 @@
         </button>
       </div>
 
+      <!-- ── Advanced Settings Collapsible ─────────────────────────────── -->
       <div class="section">
-        <div class="section-title collapsible-header" id="sumo-toggle-header" onclick="toggleSumoPanel()">
-          🚗 SUMO Simulation
-          <span id="sumo-toggle-icon" style="font-size:.7rem;color:var(--muted);">▼ expand</span>
+        <div class="section-title collapsible-header" id="advanced-toggle-header" onclick="toggleAdvancedPanel()">
+          <span>⚙️ Advanced Settings</span>
+          <span id="advanced-toggle-icon" style="font-size:0.75rem; color:var(--muted); transition: transform 0.25s ease; display: inline-block;">▼</span>
         </div>
-        <div id="sumo-body" style="display:none;padding-top:10px;">
-          <div class="sumo-row" style="margin-bottom:10px;">
-            <label for="sumo-city">City</label>
-            <select id="sumo-city" style="flex:1;">
-              <option value="kolkata">Kolkata</option>
-              <option value="noida">Noida</option>
-              <option value="delhi">Delhi</option>
-              <option value="mumbai">Mumbai</option>
-              <option value="bangalore">Bangalore</option>
-            </select>
+        <div id="advanced-body" style="display:none;padding-top:12px;display:flex;flex-direction:column;gap:16px;">
+          
+          <!-- Time of Day (Hour slider) -->
+          <div style="border-bottom:1px solid var(--border);padding-bottom:14px;">
+            <div class="section-title" style="font-size:0.75rem;margin-bottom:8px;">Time of Day</div>
+            <div class="hour-row">
+              <input type="range" id="hour-slider" min="0" max="23" value="8"
+                oninput="document.getElementById('hour-badge').textContent = formatHour(this.value)" />
+              <div class="hour-badge" id="hour-badge">08:00</div>
+            </div>
+            <div style="font-size:.72rem;color:var(--muted);margin-top:5px;">
+              Affects vehicle density (rush hours = more emissions)
+            </div>
           </div>
-          <div class="sumo-row">
-            <label>Steps</label>
-            <input type="range" id="sumo-steps" min="100" max="600" value="300"
-              oninput="document.getElementById('sumo-steps-val').textContent=this.value" />
-            <span class="sumo-val" id="sumo-steps-val">300</span>
+
+          <!-- SUMO Simulator -->
+          <div>
+            <div class="section-title" style="font-size:0.75rem;margin-bottom:8px;">SUMO Simulator & Physics</div>
+            <div class="sumo-row" style="margin-bottom:10px;">
+              <label for="sumo-city">City</label>
+              <select id="sumo-city" style="flex:1;">
+                <option value="kolkata">Kolkata</option>
+                <option value="noida">Noida</option>
+                <option value="delhi">Delhi</option>
+                <option value="mumbai">Mumbai</option>
+                <option value="bangalore">Bangalore</option>
+              </select>
+            </div>
+            <div class="sumo-row">
+              <label>Steps</label>
+              <input type="range" id="sumo-steps" min="100" max="600" value="300"
+                oninput="document.getElementById('sumo-steps-val').textContent=this.value" />
+              <span class="sumo-val" id="sumo-steps-val">300</span>
+            </div>
+            <div class="sumo-row">
+              <label>Vehicles</label>
+              <input type="range" id="sumo-vehicles" min="50" max="500" value="200"
+                oninput="document.getElementById('sumo-veh-val').textContent=this.value" />
+              <span class="sumo-val" id="sumo-veh-val">200</span>
+            </div>
+            <div class="sumo-check-row" style="margin-top:10px;">
+              <input type="checkbox" id="sumo-skip" checked />
+              <label for="sumo-skip">Physics-only mode (no SUMO binary needed)</label>
+            </div>
+            <div class="sumo-check-row">
+              <input type="checkbox" id="sumo-gui" />
+              <label for="sumo-gui">Open SUMO-GUI window (requires SUMO installed)</label>
+            </div>
+            <button class="btn-sumo" id="sumo-run-btn" onclick="runSumoSimulation()" style="margin-top:8px;">
+              🚗 Run SUMO Simulation
+            </button>
+            <div class="sumo-status-bar" id="sumo-status-bar"></div>
+            <div class="log-box" id="sumo-log"></div>
+            <div class="sumo-plot" id="sumo-plot">
+              <div class="section-title" style="margin-bottom:6px;">SUMO Route Comparison</div>
+              <img id="sumo-plot-img" src="" alt="SUMO route comparison" onclick="openModalSrc(this.src)" />
+            </div>
           </div>
-          <div class="sumo-row">
-            <label>Vehicles</label>
-            <input type="range" id="sumo-vehicles" min="50" max="500" value="200"
-              oninput="document.getElementById('sumo-veh-val').textContent=this.value" />
-            <span class="sumo-val" id="sumo-veh-val">200</span>
-          </div>
-          <div class="sumo-check-row">
-            <input type="checkbox" id="sumo-skip" checked />
-            <label for="sumo-skip">Physics-only mode (no SUMO binary needed)</label>
-          </div>
-          <div class="sumo-check-row">
-            <input type="checkbox" id="sumo-gui" />
-            <label for="sumo-gui">Open SUMO-GUI window (requires SUMO installed)</label>
-          </div>
-          <button class="btn-sumo" id="sumo-run-btn" onclick="runSumoSimulation()">
-            🚗 Run SUMO Eco-Routing
-          </button>
-          <div class="sumo-status-bar" id="sumo-status-bar"></div>
-          <div class="log-box" id="sumo-log"></div>
-          <div class="sumo-plot" id="sumo-plot">
-            <div class="section-title" style="margin-bottom:6px;">SUMO Route Comparison</div>
-            <img id="sumo-plot-img" src="" alt="SUMO route comparison" onclick="openModalSrc(this.src)" />
-          </div>
+
         </div>
       </div>
 
@@ -1509,7 +1786,11 @@
 
         <div class="search-input-wrapper">
           <div class="search-input-container">
-            <span style="font-size:0.8rem; margin-right:4px;">🟢</span>
+            <svg class="search-point-icon origin" width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="margin-right: 8px; flex-shrink: 0; filter: drop-shadow(0 2px 4px rgba(59, 130, 246, 0.25));">
+              <path d="M12 2C8.13 2 5 5.13 5 9C5 14.25 12 22 12 22C12 22 19 14.25 19 9C19 5.13 15.87 2 12 2Z" fill="#3B82F6"/>
+              <circle cx="12" cy="9" r="5" fill="white"/>
+              <text x="12" y="12" font-size="9" font-weight="900" fill="#3B82F6" text-anchor="middle" font-family="'Outfit', sans-serif">S</text>
+            </svg>
             <input type="text" id="search-origin" placeholder="Search starting point..."
               oninput="searchLocation(this.value, 'search-origin', 'origin-search-results')"
               onfocus="showLocationDropdown(this.value, 'search-origin', 'origin-search-results')" />
@@ -1519,7 +1800,11 @@
 
         <div class="search-input-wrapper">
           <div class="search-input-container">
-            <span style="font-size:0.8rem; margin-right:4px;">🔴</span>
+            <svg class="search-point-icon destination" width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="margin-right: 8px; flex-shrink: 0; filter: drop-shadow(0 2px 4px rgba(245, 158, 11, 0.25));">
+              <path d="M12 2C8.13 2 5 5.13 5 9C5 14.25 12 22 12 22C12 22 19 14.25 19 9C19 5.13 15.87 2 12 2Z" fill="#F59E0B"/>
+              <circle cx="12" cy="9" r="5" fill="white"/>
+              <text x="12" y="12" font-size="9" font-weight="900" fill="#F59E0B" text-anchor="middle" font-family="'Outfit', sans-serif">E</text>
+            </svg>
             <input type="text" id="search-destination" placeholder="Search destination..."
               oninput="searchLocation(this.value, 'search-destination', 'destination-search-results')"
               onfocus="showLocationDropdown(this.value, 'search-destination', 'destination-search-results')" />
@@ -1891,7 +2176,7 @@
       }
     });
 
-    const map = L.map("map", { zoomControl: true }).setView([22.5726, 88.3639], 14);
+    const map = L.map("map", { zoomControl: true, attributionControl: false }).setView([22.5726, 88.3639], 14);
 
     let currentMapTheme = "dark";
     let baseTileLayer = null;
@@ -1951,11 +2236,28 @@
       map.getContainer().style.cursor = mode ? "crosshair" : "";
     }
 
-    function makeIcon(color, label) {
+    function makeIcon(type) {
+      const isStart = type === "origin";
+      const color = isStart ? "#3B82F6" : "#F59E0B"; // Premium blue for start, Amber for end
+      const label = isStart ? "Start" : "End";
+      const markerText = isStart ? "S" : "E";
+      
       return L.divIcon({
-        className: "",
-        html: `<div style="background:${color};width:18px;height:18px;border-radius:50%;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:white;">${label}</div>`,
-        iconSize: [18, 18], iconAnchor: [9, 9]
+        className: "custom-map-pin",
+        html: `
+          <div class="pin-wrapper">
+            <div class="pin-pulse" style="background-color: ${color}"></div>
+            <svg class="pin-svg" width="34" height="44" viewBox="0 0 34 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M17 0C7.61 0 0 7.61 0 17C0 27.8 17 44 17 44C17 44 34 27.8 34 17C34 7.61 26.39 0 17 0Z" fill="${color}"/>
+              <circle cx="17" cy="17" r="11" fill="white"/>
+              <text x="17" y="21" font-size="12" font-weight="900" fill="${color}" text-anchor="middle" font-family="'Outfit', 'Inter', sans-serif">${markerText}</text>
+            </svg>
+            <div class="pin-label-card" style="border-top: 3px solid ${color}">${label}</div>
+          </div>
+        `,
+        iconSize: [34, 56],
+        iconAnchor: [17, 44],
+        popupAnchor: [0, -42]
       });
     }
 
@@ -1964,18 +2266,18 @@
       const c = colors[efLevel] || colors.medium;
       return L.divIcon({
         className: "",
-        html: `<div style="background:${c};width:10px;height:10px;border-radius:50%;border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,.5);"></div>`,
-        iconSize: [10, 10], iconAnchor: [5, 5]
+        html: `<div style="background:${c};width:12px;height:12px;border-radius:50%;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,.45);"></div>`,
+        iconSize: [12, 12], iconAnchor: [6, 6]
       });
     }
 
     function placeMarker(type, lat, lng) {
       if (type === "origin") {
         if (originMarker) map.removeLayer(originMarker);
-        originMarker = L.marker([lat, lng], { icon: makeIcon("#22D3EE", "S") }).addTo(map).bindPopup("Start").openPopup();
+        originMarker = L.marker([lat, lng], { icon: makeIcon("origin") }).addTo(map).bindPopup("Start Location").openPopup();
       } else {
         if (destMarker) map.removeLayer(destMarker);
-        destMarker = L.marker([lat, lng], { icon: makeIcon("#F43F5E", "E") }).addTo(map).bindPopup("End").openPopup();
+        destMarker = L.marker([lat, lng], { icon: makeIcon("dest") }).addTo(map).bindPopup("Destination Location").openPopup();
       }
     }
 
@@ -2658,15 +2960,16 @@
       return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
-    // ── SUMO panel ─────────────────────────────────────────────────────────────
+    // ── Advanced Settings panel ────────────────────────────────────────────────
     let _sumoTaskId = null;
     let _sumoPolling = null;
-    let _sumoOpen = false;
+    let _advancedOpen = false;
 
-    function toggleSumoPanel() {
-      _sumoOpen = !_sumoOpen;
-      document.getElementById("sumo-body").style.display = _sumoOpen ? "block" : "none";
-      document.getElementById("sumo-toggle-icon").textContent = _sumoOpen ? "▲ collapse" : "▼ expand";
+    function toggleAdvancedPanel() {
+      _advancedOpen = !_advancedOpen;
+      const body = document.getElementById("advanced-body");
+      body.style.display = _advancedOpen ? "flex" : "none";
+      document.getElementById("advanced-toggle-icon").style.transform = _advancedOpen ? "rotate(180deg)" : "rotate(0deg)";
     }
 
     async function runSumoSimulation() {

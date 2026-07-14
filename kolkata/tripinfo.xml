@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- generated on 2026-07-14T21:44:31.849532+05:30 by Eclipse SUMO GUI 1.27.0
+<sumoConfiguration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/sumoConfiguration.xsd">
+
+    <input>
+        <net-file value="kolkata\network.net.xml"/>
+        <route-files value="kolkata\traffic.rou.xml"/>
+    </input>
+
+    <output>
+        <emission-output value="kolkata\emissions.xml"/>
+        <summary-output value="kolkata\summary.xml"/>
+        <tripinfo-output value="kolkata\tripinfo.xml"/>
+    </output>
+
+    <time>
+        <begin value="0"/>
+        <end value="300"/>
+        <step-length value="0.5"/>
+    </time>
+
+    <processing>
+        <collision.action value="warn"/>
+        <time-to-teleport value="600"/>
+    </processing>
+
+    <report>
+        <verbose value="false"/>
+        <no-warnings value="true"/>
+        <no-step-log value="true"/>
+    </report>
+
+    <traci_server>
+        <remote-port value="63457"/>
+    </traci_server>
+
+    <gui_only>
+        <gui-settings-file value="kolkata\gui_settings.xml"/>
+        <quit-on-end value="false"/>
+        <start value="true"/>
+    </gui_only>
+
+</sumoConfiguration>
+-->
+
+<tripinfos xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/tripinfo_file.xsd">
+    <tripinfo id="v_17" depart="17.00" departLane="1309674215#1_0" departPos="4.26" departSpeed="3.03" departDelay="0.00" arrival="41.50" arrivalLane="1309674215#1_0" arrivalPos="4.26" arrivalSpeed="4.08" duration="24.50" routeLength="74.60" waitingTime="0.00" waitingCount="0" stopTime="0.00" timeLoss="11.08" rerouteNo="0" devices="tripinfo_v_17 emissions_v_17" vType="car_diesel" speedFactor="0.94" vaporized="">
+        <emissions CO_abs="6.72" CO2_abs="29977.91" HC_abs="0.84" PMx_abs="0.00" NOx_abs="166.12" fuel_abs="9431.13" electricity_abs="0.00"/>
+    </tripinfo>
+    <tripinfo id="v_24" depart="24.00" departLane="-1111799486#1_0" departPos="2.26" departSpeed="2.83" departDelay="0.00" arrival="45.00" arrivalLane="-1111799486#1_0" arrivalPos="2.26" arrivalSpeed="4.51" duration="21.00" routeLength="54.60" waitingTime="0.00" waitingCount="0" stopTime="0.00" timeLoss="9.96" rerouteNo="0" devices="tripinfo_v_24 emissions_v_24" vType="car_diesel" speedFactor="0.87" vaporized="">
+        <emissions CO_abs="6.99" CO2_abs="29629.67" HC_abs="0.81" PMx_abs="0.00" NOx_abs="168.14" fuel_abs="9321.66" electricity_abs="0.00"/>
+    </tripinfo>
+    <tripinfo id="v_19" depart="19.00" departLane="-102023551#1_0" departPos="2.41" departSpeed="3.30" departDelay="0.00" arrival="47.00" arrivalLane="102023551#1_0" arrivalPos="2.41" arrivalSpeed="4.39" duration="28.00" routeLength="84.15" waitingTime="0.00" waitingCount="0" stopTime="0.00" timeLoss="11.04" rerouteNo="0" devices="tripinfo_v_19 emissions_v_19" vType="car_petrol" speedFactor="1.02" vaporized="">
+        <emissions CO_abs="1713.08" CO2_abs="41850.79" HC_abs="8.76" PMx_abs="0.82" NOx_abs="17.99" fuel_abs="13349.04" electricity_abs="0.00"/>
+    </tripinfo>
+</tripinfos>

@@ -9,10 +9,6 @@ __pycache__
 .venv*/
 .env
 .env.*
-delhi
-noida
-kolkata
-cache
 # OS
 .DS_Store
 Thumbs.db
@@ -21,29 +17,3 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Large datasets and generated artifacts
-cache/
-**/*.geojson
-**/*.osm
-**/*.net.xml
-**/*.sumocfg
-**/*.rou.xml
-**/*.trips.xml
-**/*.add.xml
-**/*emissions*.xml
-**/*summary*.xml
-**/*tripinfo*.xml
-**/*fcd*.xml
-**/*.csv
-
-# Models and binaries
-**/*.pkl
-
-# Plots and outputs
-*.pdf
-
-# Local data
-/data/
-/data_fusion/cache/
-/kolkata/
-/model_for_emissions/

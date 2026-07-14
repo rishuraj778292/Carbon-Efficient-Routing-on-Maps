@@ -1,0 +1,10 @@
+column,unit,source
+length,meters,OSMnx road network
+building_density,count (50 m buffer),OSM buildings
+vegetation_score,count (50 m buffer),OSM land-use/natural
+vehicle_count,vehicles,simulated
+avg_speed_kmph,km/h,simulated
+wind_speed_mps,m/s,OpenWeatherMap
+wind_dir_deg,degrees,OpenWeatherMap
+AQI,0-500 (dimensionless),OpenWeatherMap Air Pollution
+carbon_cost,dimensionless index,derived formula
