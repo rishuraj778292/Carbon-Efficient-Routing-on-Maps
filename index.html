@@ -2330,10 +2330,7 @@
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">
       <span style="color:var(--cyan);font-weight:700;">🚗 ${info.total} vehicles</span>${srcBadge}
     </div>
-    <div style="display:grid;grid-template-columns:repeat(${Math.min(Object.keys(info.counts).length, 4)},1fr);gap:4px;margin-bottom:5px;">${countsHtml}</div>
-    <div style="background:linear-gradient(135deg,rgba(34,211,238,.08),rgba(16,185,129,.08));border:1px solid var(--cyan);border-radius:6px;padding:5px;text-align:center;">
-      <div style="font-size:.82rem;font-weight:800;color:var(--cyan);">${info.co2.toLocaleString()} g CO₂/km</div>
-    </div>${thumbHtml}`;
+    <div style="display:grid;grid-template-columns:repeat(${Math.min(Object.keys(info.counts).length, 4)},1fr);gap:4px;margin-bottom:5px;">${countsHtml}</div>${thumbHtml}`;
     }
 
     function updateEvaluateBtn() {
@@ -2399,7 +2396,6 @@
             </div>
           </div>
           <div class="seg-stats">
-            <div class="seg-ef">${seg.emission_factor.toLocaleString()} g CO₂</div>
           </div>
         </div>
         <div class="seg-actions">
@@ -2451,7 +2447,7 @@
           : seg.emission_factor > maxEf * 0.4 ? 'medium' : 'low';
         const marker = L.marker(seg.midpoint, { icon: makeSegmentIcon(level) })
           .addTo(map)
-          .bindPopup(`<b>${seg.name}</b><br/>${seg.highway}<br/>EF: ${seg.emission_factor.toLocaleString()} g CO₂`);
+          .bindPopup(`<b>${seg.name}</b><br/>${seg.highway}`);
         segmentMarkers.push(marker);
       });
 
@@ -2527,7 +2523,6 @@
       <span style="color:var(--cyan);font-weight:700;font-size:.8rem;">🚗 ${data.total_vehicles} vehicles detected</span>
       ${srcBadge}
     </div>
-    <div style="color:var(--muted);font-size:.65rem;margin-top:2px;">${(data.co2_per_km_g || 0).toLocaleString()} g CO₂/km estimated</div>
     ${thumbHtml}`;
     }
 
@@ -2773,8 +2768,7 @@
 
         baseLayer.bindPopup(
           `<b style="color:${color}">${name}</b>${name === data.best_route ? ' ⭐ BEST ECO' : ''}<br/>
-       ${data.stats[name]?.distance_km || "?"} km | ${data.stats[name]?.time_min || "?"} min<br/>
-       CO₂ Emissions: <b>${(data.stats[name]?.trip_co2_g || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })} g</b>`
+       ${data.stats[name]?.distance_km || "?"} km | ${data.stats[name]?.time_min || "?"} min`
         );
 
         // Clicking on a route line highlights it
@@ -2801,8 +2795,7 @@
 
               segLayer.bindPopup(
                 `<b style="color:${color}">${name}</b> (${seg.name})<br/>
-             Speed: <b>${seg.avg_speed_kmh} km/h</b> (${seg.speed_category.toUpperCase()})<br/>
-             Segment CO₂: <b>${seg.emission_factor} g</b>`
+             Speed: <b>${seg.avg_speed_kmh} km/h</b> (${seg.speed_category.toUpperCase()})`
               );
               routeLayers.push(segLayer);
             }
@@ -2837,18 +2830,18 @@
         // Update sidebar savings
         savingsBox.innerHTML = `
       <div class="savings-banner">
-        <div class="savings-val">${saved.toLocaleString(undefined, { maximumFractionDigits: 0 })} g CO₂ saved</div>
-        <p>Eco-route vs shortest · ${pct}% less emissions</p>
+        <div class="savings-val">Eco-Route Selected</div>
+        <p>Optimized for lower environmental impact</p>
         <p style="margin-top:4px;">+${extraKm} km | +${extraMin} min extra</p>
       </div>`;
 
         // Update floating card savings
         if (saved > 0 && currentVehicleType !== "ev" && currentVehicleType !== "bicycle") {
-          document.getElementById("summary-savings-text").textContent = `Eco-Route Saves ${saved.toLocaleString(undefined, { maximumFractionDigits: 0 })}g CO₂`;
-          document.getElementById("summary-savings-desc").textContent = `vs shortest route (${pct}% less emissions)`;
+          document.getElementById("summary-savings-text").textContent = `Eco-Route Selected`;
+          document.getElementById("summary-savings-desc").textContent = `vs shortest route (more environment-friendly)`;
         } else if (currentVehicleType === "ev" || currentVehicleType === "bicycle") {
           document.getElementById("summary-savings-text").textContent = `Eco-Friendly Travel`;
-          document.getElementById("summary-savings-desc").textContent = `0 g tailpipe emissions!`;
+          document.getElementById("summary-savings-desc").textContent = `Zero tailpipe emissions!`;
         } else {
           document.getElementById("summary-savings-text").textContent = `Optimal Route Selected`;
           document.getElementById("summary-savings-desc").textContent = `Minimal emissions path active.`;
@@ -2875,8 +2868,7 @@
           </div>
           <div class="summary-route-tab-meta">
             <span>${st.distance_km} km</span> &middot; 
-            <span>${st.time_min} min</span> &middot; 
-            <span style="color:${color}; font-weight:700;">${st.trip_co2_g.toLocaleString(undefined, { maximumFractionDigits: 0 })} g</span>
+            <span>${st.time_min} min</span>
           </div>
         </div>`;
         }).join("");
@@ -2902,11 +2894,6 @@
         <div class="stats-grid">
           <div class="stat-item"><div class="stat-label">Distance</div><div class="stat-value">${st.distance_km} km</div></div>
           <div class="stat-item"><div class="stat-label">Time</div><div class="stat-value">${st.time_min} min</div></div>
-          <div class="stat-item" style="grid-column:1/-1;">
-            <div class="stat-label">Trip CO₂ Emissions</div>
-            <div class="stat-value" style="color:${color};font-size:1.05rem;">${st.trip_co2_g.toLocaleString(undefined, { maximumFractionDigits: 0 })} g</div>
-          </div>
-
           <div class="stat-item"><div class="stat-label">Segments</div><div class="stat-value">${st.segments}</div></div>
         </div>
         <!-- Per-route YOLO upload -->
